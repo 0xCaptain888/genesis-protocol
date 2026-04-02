@@ -18,10 +18,11 @@ Usage:
 import subprocess
 import sys
 import time
+import os
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 RPC = "https://xlayertestrpc.okx.com"
-PK = "0xdf50bbee9fdea174c322864baca05244e58ce92887dfc203521b61724dbae516"
+PK = os.environ.get("PRIVATE_KEY", "")
 
 ASSEMBLER = "0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78"
 DYNAMIC_FEE = "0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed"
@@ -223,6 +224,10 @@ def run_swap_simulations(tx_count):
 
 
 def main():
+    if not PK:
+        print("[ERROR] PRIVATE_KEY environment variable is not set.")
+        sys.exit(1)
+
     print("=" * 60)
     print("  Genesis Protocol - Chain Activity Generator")
     print("  X Layer Testnet (Chain 1952)")

@@ -18,7 +18,7 @@ import hashlib
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 RPC = "https://xlayertestrpc.okx.com"
-PK = "0xdf50bbee9fdea174c322864baca05244e58ce92887dfc203521b61724dbae516"
+PK = os.environ.get("PRIVATE_KEY", "")
 ASSEMBLER = "0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78"
 CHAIN_ID = 1952
 NUM_CYCLES = 3
@@ -572,6 +572,11 @@ def layer_meta_cognition(cycle_num, execution_data, evolution_data):
 # ─── Main Loop ───────────────────────────────────────────────────────────────
 
 def main():
+    if not PK:
+        print("ERROR: PRIVATE_KEY environment variable is not set.")
+        print("Export it before running: export PRIVATE_KEY=0x...")
+        sys.exit(1)
+
     print("=" * 50)
     print("  GENESIS PROTOCOL - AUTONOMOUS AGENT")
     print("  Mode: LIVE (PAUSED=False, DRY_RUN=False)")

@@ -131,24 +131,24 @@ class OnchainOSAPI:
     # ── Market Endpoints ──────────────────────────────────────────────────
 
     def get_price(self, base: str, quote: str, chain_id: str = "196") -> dict | None:
-        """GET price data for a base/quote pair."""
-        path = "/api/v5/dex/market/price"
-        params = {"baseCurrency": base, "quoteCurrency": quote, "chainId": chain_id}
-        cli_cmd = ["onchainos", "market", "price", "--base", base, "--quote", quote, "--chain", chain_id]
+        """GET price data for a base/quote pair via the aggregator all-tokens endpoint."""
+        path = "/api/v5/dex/aggregator/all-tokens"
+        params = {"chainId": chain_id}
+        cli_cmd = ["onchainos", "aggregator", "all-tokens", "--chain", chain_id]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
 
     # ── Trade Endpoints ───────────────────────────────────────────────────
 
     def get_dex_quote(self, token_in: str, token_out: str, amount: str, chain_id: str = "196", slippage: str = "50") -> dict | None:
         """GET a DEX swap quote."""
-        path = "/api/v5/dex/trade/quote"
+        path = "/api/v5/dex/aggregator/quote"
         params = {
-            "fromToken": token_in, "toToken": token_out,
+            "fromTokenAddress": token_in, "toTokenAddress": token_out,
             "amount": amount, "chainId": chain_id, "slippage": slippage,
         }
         cli_cmd = [
-            "onchainos", "trade", "quote",
-            "--token-in", token_in, "--token-out", token_out,
+            "onchainos", "aggregator", "quote",
+            "--from-token", token_in, "--to-token", token_out,
             "--amount", amount, "--chain", chain_id, "--slippage", slippage,
         ]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
@@ -156,15 +156,15 @@ class OnchainOSAPI:
     def post_swap(self, token_in: str, token_out: str, amount: str, user_address: str,
                   chain_id: str = "196", slippage: str = "50") -> dict | None:
         """POST a DEX swap execution."""
-        path = "/api/v5/dex/trade/swap"
+        path = "/api/v5/dex/aggregator/swap"
         body = {
-            "fromToken": token_in, "toToken": token_out,
-            "amount": amount, "userAddress": user_address,
+            "fromTokenAddress": token_in, "toTokenAddress": token_out,
+            "amount": amount, "userWalletAddress": user_address,
             "chainId": chain_id, "slippage": slippage,
         }
         cli_cmd = [
-            "onchainos", "trade", "swap",
-            "--token-in", token_in, "--token-out", token_out,
+            "onchainos", "aggregator", "swap",
+            "--from-token", token_in, "--to-token", token_out,
             "--amount", amount, "--user", user_address,
             "--chain", chain_id, "--slippage", slippage,
         ]
@@ -174,7 +174,7 @@ class OnchainOSAPI:
 
     def get_balances(self, address: str, chain_id: str = "196") -> dict | None:
         """GET wallet token balances."""
-        path = "/api/v5/dex/wallet/balances"
+        path = "/api/v5/wallet/asset/token-balances-by-address"
         params = {"address": address, "chainId": chain_id}
         cli_cmd = ["onchainos", "wallet", "balances", "--address", address, "--chain", chain_id]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)

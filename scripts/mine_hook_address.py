@@ -19,7 +19,7 @@ from Crypto.Hash import keccak
 
 # ─── Configuration ────────────────────────────────────────────────────
 RPC = "https://xlayertestrpc.okx.com"
-PRIVATE_KEY = "0xdf50bbee9fdea174c322864baca05244e58ce92887dfc203521b61724dbae516"
+PRIVATE_KEY = os.environ.get("PRIVATE_KEY", "")
 POOL_MANAGER = "0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32"
 ASSEMBLER = "0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78"
 
@@ -73,6 +73,10 @@ def parse_json_output(output):
 
 
 def main():
+    if not PRIVATE_KEY:
+        print("[ERROR] PRIVATE_KEY environment variable is not set.")
+        sys.exit(1)
+
     print("=" * 60)
     print("GenesisV4Hook CREATE2 Address Mining & Deployment")
     print("=" * 60)

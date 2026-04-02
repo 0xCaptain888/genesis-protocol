@@ -23,8 +23,8 @@ import time
 
 RPC_URL = "https://xlayertestrpc.okx.com"
 CHAIN_ID = 195  # X Layer Testnet chain ID
-PRIVATE_KEY = "0xdf50bbee9fdea174c322864baca05244e58ce92887dfc203521b61724dbae516"
-WALLET = "0xd2D120eB7cEd38551cCeFb48021067d41D6542d3"
+PRIVATE_KEY = os.environ.get("PRIVATE_KEY", "")
+WALLET = os.environ.get("WALLET_ADDRESS", "")
 
 # Deployed contracts
 POOL_MANAGER = "0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32"
@@ -323,6 +323,15 @@ def run_step_by_step():
 
 
 def main():
+    if not PRIVATE_KEY:
+        print("ERROR: PRIVATE_KEY environment variable is not set.")
+        print("Export it before running: export PRIVATE_KEY=0x...")
+        sys.exit(1)
+    if not WALLET:
+        print("ERROR: WALLET_ADDRESS environment variable is not set.")
+        print("Export it before running: export WALLET_ADDRESS=0x...")
+        sys.exit(1)
+
     print("=" * 60)
     print("  Genesis Protocol - Uniswap V4 Swap Execution")
     print("  Chain: X Layer Testnet")
