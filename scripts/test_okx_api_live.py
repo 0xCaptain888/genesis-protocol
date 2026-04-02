@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""Live integration test for OKX API - Market + DEX endpoints.
+"""Live integration test for OKX API - Market + DEX V6 endpoints.
 
-Demonstrates real API calls used by Genesis Protocol's perception layer.
-Requires OK_ACCESS_KEY, OK_ACCESS_SECRET, OK_ACCESS_PASSPHRASE env vars.
+Demonstrates real API calls used by Genesis Protocol's perception and trade layers.
+Requires environment variables:
+  - OK_ACCESS_KEY, OK_ACCESS_SECRET, OK_ACCESS_PASSPHRASE  (Market API, account-level)
+  - OK_DEX_KEY, OK_DEX_SECRET, OK_DEX_PASSPHRASE           (DEX API, project-level)
 
 Tests:
-  1. ETH-USDT ticker (real-time price)
-  2. OKB-USDT ticker (X Layer native token)
-  3. BTC-USDT ticker (benchmark)
-  4. ETH-USDT 1H candles (volatility calculation)
-  5. ETH-USDT orderbook depth (liquidity/spread analysis)
-  6. ETH-USDT-SWAP funding rate (sentiment signal)
-  7. Volatility computation (DynamicFee Module input)
-  8. Multi-pair snapshot (full perception cycle)
+  Market API (www.okx.com):
+    1. ETH-USDT ticker (real-time price)
+    2. OKB-USDT ticker (X Layer native token)
+    3. BTC-USDT ticker (benchmark)
+    4. ETH-USDT 1H candles (volatility calculation)
+    5. ETH-USDT orderbook depth (liquidity/spread analysis)
+    6. ETH-USDT-SWAP funding rate (sentiment signal)
+    7. Volatility computation (DynamicFee Module input)
+    8. Multi-pair snapshot (full perception cycle)
+  DEX Aggregator API V6 (web3.okx.com):
+    9. Supported chains (X Layer discovery)
+   10. All tokens on X Layer (token registry)
+   11. DEX quote OKB->USDT (trade simulation)
 """
 import base64
 import hashlib
@@ -30,34 +37,63 @@ except ImportError:
 
 # ─── Credentials ─────────────────────────────────────────────────────────────
 
-API_KEY = os.environ.get("OK_ACCESS_KEY", "")
-SECRET = os.environ.get("OK_ACCESS_SECRET", "")
-PASSPHRASE = os.environ.get("OK_ACCESS_PASSPHRASE", "")
-BASE = "https://www.okx.com"
+# Market API (account-level key)
+MARKET_KEY = os.environ.get("OK_ACCESS_KEY", "")
+MARKET_SECRET = os.environ.get("OK_ACCESS_SECRET", "")
+MARKET_PASSPHRASE = os.environ.get("OK_ACCESS_PASSPHRASE", "")
+MARKET_BASE = "https://www.okx.com"
+
+# DEX API (project-level key)
+DEX_KEY = os.environ.get("OK_DEX_KEY", "")
+DEX_SECRET = os.environ.get("OK_DEX_SECRET", "")
+DEX_PASSPHRASE = os.environ.get("OK_DEX_PASSPHRASE", "")
+DEX_BASE = "https://web3.okx.com"
 
 
-def sign(timestamp, method, path):
+def _sign(secret, timestamp, method, path):
     msg = timestamp + method + path
-    mac = hmac.new(SECRET.encode(), msg.encode(), hashlib.sha256)
+    mac = hmac.new(secret.encode(), msg.encode(), hashlib.sha256)
     return base64.b64encode(mac.digest()).decode()
 
 
 def api_get(path, params=None):
-    """Authenticated GET request to OKX Market API."""
+    """Authenticated GET request to OKX Market API (www.okx.com)."""
     request_path = path
     if params:
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         request_path = path + "?" + qs
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     headers = {
-        "OK-ACCESS-KEY": API_KEY,
-        "OK-ACCESS-SIGN": sign(ts, "GET", request_path),
+        "OK-ACCESS-KEY": MARKET_KEY,
+        "OK-ACCESS-SIGN": _sign(MARKET_SECRET, ts, "GET", request_path),
         "OK-ACCESS-TIMESTAMP": ts,
-        "OK-ACCESS-PASSPHRASE": PASSPHRASE,
+        "OK-ACCESS-PASSPHRASE": MARKET_PASSPHRASE,
         "Content-Type": "application/json",
     }
     try:
-        r = requests.get(BASE + request_path, headers=headers, timeout=15)
+        r = requests.get(MARKET_BASE + request_path, headers=headers, timeout=15)
+        return r.json()
+    except Exception as e:
+        print(f"  Error: {e}")
+        return {"error": str(e)}
+
+
+def dex_get(path, params=None):
+    """Authenticated GET request to OKX DEX V6 API (web3.okx.com)."""
+    request_path = path
+    if params:
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        request_path = path + "?" + qs
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    headers = {
+        "OK-ACCESS-KEY": DEX_KEY,
+        "OK-ACCESS-SIGN": _sign(DEX_SECRET, ts, "GET", request_path),
+        "OK-ACCESS-TIMESTAMP": ts,
+        "OK-ACCESS-PASSPHRASE": DEX_PASSPHRASE,
+        "Content-Type": "application/json",
+    }
+    try:
+        r = requests.get(DEX_BASE + request_path, headers=headers, timeout=15)
         return r.json()
     except Exception as e:
         print(f"  Error: {e}")
@@ -192,30 +228,114 @@ def test_multi_pair_snapshot():
     return all_ok
 
 
+# ─── DEX V6 Tests ────────────────────────────────────────────────────────────
+
+def test_dex_supported_chains():
+    """[DEX Aggregator] Discover supported chains including X Layer."""
+    print("\n[9] GET /api/v6/dex/aggregator/supported/chain")
+    data = dex_get("/api/v6/dex/aggregator/supported/chain")
+    if data.get("code") == "0" and data.get("data"):
+        chains = data["data"]
+        xlayer = [c for c in chains if str(c.get("chainIndex")) == "196"]
+        print(f"  Supported chains: {len(chains)}")
+        if xlayer:
+            x = xlayer[0]
+            print(f"  X Layer found: chainIndex={x['chainIndex']} name={x['chainName']}")
+            print(f"  DEX approve addr: {x.get('dexTokenApproveAddress', '?')}")
+        return bool(xlayer)
+    print(f"  Failed: {data}")
+    return False
+
+
+def test_dex_all_tokens():
+    """[DEX Aggregator] Token registry on X Layer."""
+    print("\n[10] GET /api/v6/dex/aggregator/all-tokens?chainIndex=196")
+    data = dex_get("/api/v6/dex/aggregator/all-tokens", {"chainIndex": "196"})
+    if data.get("code") == "0" and data.get("data"):
+        tokens = data["data"]
+        print(f"  Tokens on X Layer: {len(tokens)}")
+        for t in tokens[:5]:
+            sym = t.get("tokenSymbol", "?")
+            addr = t.get("tokenContractAddress", "?")[:20]
+            dec = t.get("decimal", "?")
+            honey = t.get("isHoneyPot", "?")
+            print(f"    {sym} ({dec} dec) honeypot={honey} {addr}...")
+        return True
+    print(f"  Failed: {data}")
+    return False
+
+
+def test_dex_quote():
+    """[Trade Layer] DEX swap quote OKB -> USDT on X Layer."""
+    print("\n[11] GET /api/v6/dex/aggregator/quote (OKB -> USDT)")
+    data = dex_get("/api/v6/dex/aggregator/quote", {
+        "chainIndex": "196",
+        "fromTokenAddress": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+        "toTokenAddress": "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+        "amount": "1000000000000000000",  # 1 OKB
+    })
+    if data.get("code") == "0" and data.get("data"):
+        routes = data["data"]
+        if isinstance(routes, list) and routes:
+            r = routes[0]
+            dex_list = r.get("dexRouterList", [])
+            if dex_list:
+                dex = dex_list[0]
+                proto = dex.get("dexProtocol", {})
+                from_tok = dex.get("fromToken", {})
+                to_tok = dex.get("toToken", {})
+                print(f"  Route: {proto.get('dexName', '?')} ({proto.get('percent', '?')}%)")
+                print(f"  From: {from_tok.get('tokenSymbol', '?')} @ ${from_tok.get('tokenUnitPrice', '?')}")
+                print(f"  To: {to_tok.get('tokenSymbol', '?')} @ ${to_tok.get('tokenUnitPrice', '?')}")
+                print(f"  Est output: {r.get('toTokenAmount', '?')}")
+                return True
+        elif isinstance(routes, dict):
+            print(f"  Route data: {json.dumps(routes)[:300]}")
+            return True
+    print(f"  Failed: {data}")
+    return False
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
-    if not all([API_KEY, SECRET, PASSPHRASE]):
-        print("ERROR: Set OK_ACCESS_KEY, OK_ACCESS_SECRET, OK_ACCESS_PASSPHRASE")
+    has_market = all([MARKET_KEY, MARKET_SECRET, MARKET_PASSPHRASE])
+    has_dex = all([DEX_KEY, DEX_SECRET, DEX_PASSPHRASE])
+
+    if not has_market and not has_dex:
+        print("ERROR: Set at least one credential set:")
+        print("  Market: OK_ACCESS_KEY, OK_ACCESS_SECRET, OK_ACCESS_PASSPHRASE")
+        print("  DEX:    OK_DEX_KEY, OK_DEX_SECRET, OK_DEX_PASSPHRASE")
         sys.exit(1)
 
     print("=" * 60)
     print("  OKX API - Live Integration Test")
-    print("  Genesis Protocol Perception + Analysis Layer")
-    print(f"  Base URL: {BASE}")
-    print(f"  Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    print("  Genesis Protocol Perception + Analysis + Trade Layer")
+    print(f"  Market API: {MARKET_BASE} ({'OK' if has_market else 'SKIP'})")
+    print(f"  DEX API:    {DEX_BASE} ({'OK' if has_dex else 'SKIP'})")
+    print(f"  Timestamp:  {datetime.now(timezone.utc).isoformat()}")
     print("=" * 60)
 
-    tests = [
-        ("ETH-USDT Ticker", test_eth_ticker),
-        ("OKB-USDT Ticker", test_okb_ticker),
-        ("BTC-USDT Ticker", test_btc_ticker),
-        ("1H Candles + Volatility", test_candles),
-        ("Orderbook Depth", test_orderbook),
-        ("Funding Rate", test_funding_rate),
-        ("Volatility -> Regime -> Fee", test_volatility_computation),
-        ("Multi-pair Snapshot", test_multi_pair_snapshot),
-    ]
+    tests = []
+
+    if has_market:
+        tests.extend([
+            ("ETH-USDT Ticker", test_eth_ticker),
+            ("OKB-USDT Ticker", test_okb_ticker),
+            ("BTC-USDT Ticker", test_btc_ticker),
+            ("1H Candles + Volatility", test_candles),
+            ("Orderbook Depth", test_orderbook),
+            ("Funding Rate", test_funding_rate),
+            ("Volatility -> Regime -> Fee", test_volatility_computation),
+            ("Multi-pair Snapshot", test_multi_pair_snapshot),
+        ])
+
+    if has_dex:
+        tests.extend([
+            ("DEX Supported Chains", test_dex_supported_chains),
+            ("DEX X Layer Tokens", test_dex_all_tokens),
+            ("DEX Quote OKB->USDT", test_dex_quote),
+        ])
 
     results = []
     for name, fn in tests:

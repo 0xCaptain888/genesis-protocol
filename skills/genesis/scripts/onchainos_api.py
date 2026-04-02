@@ -265,23 +265,46 @@ class OnchainOSAPI:
             "latest_close": closes[0],
         }
 
-    # ── Market Endpoints ──────────────────────────────────────────────────
+    # ── DEX Aggregator Endpoints (V6 - Trade Execution Layer) ──────────────
 
-    def get_price(self, base: str, quote: str, chain_id: str = "196") -> dict | None:
-        """GET price data for a base/quote pair via the aggregator all-tokens endpoint."""
-        path = "/api/v5/dex/aggregator/all-tokens"
-        params = {"chainId": chain_id}
-        cli_cmd = ["onchainos", "aggregator", "all-tokens", "--chain", chain_id]
+    def get_supported_chains(self) -> dict | None:
+        """GET supported chains for DEX aggregation.
+
+        Returns all chains supported by the OKX DEX aggregator, including
+        X Layer (chainIndex=196). Used to verify chain availability.
+        """
+        path = "/api/v6/dex/aggregator/supported/chain"
+        cli_cmd = ["onchainos", "aggregator", "supported-chains"]
+        return self._request_with_fallback("GET", path, cli_cmd)
+
+    def get_dex_tokens(self, chain_index: str = "196") -> dict | None:
+        """GET all tradeable tokens on a chain via DEX aggregator.
+
+        Used by the Perception Layer to discover available tokens on X Layer
+        and check token metadata (decimals, honeypot status, tax rate).
+        """
+        path = "/api/v6/dex/aggregator/all-tokens"
+        params = {"chainIndex": chain_index}
+        cli_cmd = ["onchainos", "aggregator", "all-tokens", "--chain", chain_index]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
 
-    # ── Trade Endpoints ───────────────────────────────────────────────────
+    def get_price(self, base: str, quote: str, chain_id: str = "196") -> dict | None:
+        """GET price data for a base/quote pair via DEX aggregator tokens."""
+        return self.get_dex_tokens(chain_id)
 
-    def get_dex_quote(self, token_in: str, token_out: str, amount: str, chain_id: str = "196", slippage: str = "50") -> dict | None:
-        """GET a DEX swap quote."""
-        path = "/api/v5/dex/aggregator/quote"
+    def get_dex_quote(self, token_in: str, token_out: str, amount: str,
+                      chain_id: str = "196", slippage: str = "50") -> dict | None:
+        """GET a DEX swap quote via the V6 aggregator.
+
+        Used by the Planning Layer to simulate swap outcomes, estimate
+        slippage, and compare against hook pool fees before execution.
+
+        Returns route details including dexName, fromToken, toToken amounts.
+        """
+        path = "/api/v6/dex/aggregator/quote"
         params = {
             "fromTokenAddress": token_in, "toTokenAddress": token_out,
-            "amount": amount, "chainId": chain_id, "slippage": slippage,
+            "amount": amount, "chainIndex": chain_id, "slippage": slippage,
         }
         cli_cmd = [
             "onchainos", "aggregator", "quote",
@@ -292,12 +315,16 @@ class OnchainOSAPI:
 
     def post_swap(self, token_in: str, token_out: str, amount: str, user_address: str,
                   chain_id: str = "196", slippage: str = "50") -> dict | None:
-        """POST a DEX swap execution."""
-        path = "/api/v5/dex/aggregator/swap"
+        """POST a DEX swap execution via V6 aggregator.
+
+        Used by the Rebalance Agent to execute position adjustments through
+        the most efficient route across X Layer DEX liquidity sources.
+        """
+        path = "/api/v6/dex/aggregator/swap"
         body = {
             "fromTokenAddress": token_in, "toTokenAddress": token_out,
             "amount": amount, "userWalletAddress": user_address,
-            "chainId": chain_id, "slippage": slippage,
+            "chainIndex": chain_id, "slippage": slippage,
         }
         cli_cmd = [
             "onchainos", "aggregator", "swap",
@@ -310,9 +337,13 @@ class OnchainOSAPI:
     # ── Wallet Endpoints ──────────────────────────────────────────────────
 
     def get_balances(self, address: str, chain_id: str = "196") -> dict | None:
-        """GET wallet token balances."""
+        """GET wallet token balances on a specific chain.
+
+        Used by the Perception Layer to check wallet holdings and by the
+        Sentinel Agent for portfolio health monitoring.
+        """
         path = "/api/v5/wallet/asset/token-balances-by-address"
-        params = {"address": address, "chainId": chain_id}
+        params = {"address": address, "chainIndex": chain_id}
         cli_cmd = ["onchainos", "wallet", "balances", "--address", address, "--chain", chain_id]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
 
