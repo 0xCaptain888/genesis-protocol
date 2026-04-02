@@ -133,6 +133,7 @@ All commands are prefixed with `genesis`. The agent can invoke these at any time
 | `genesis market` | Run a full market analysis and display the current regime classification, volatility metrics, trend direction, and recommended preset. |
 | `genesis config set [key] [value]` | Update a runtime configuration parameter. Changes take effect immediately. Critical parameters: `PAUSED`, `MODE`, `DRY_RUN`, `CONFIDENCE_THRESHOLD`, `MAX_POSITION_SIZE_PCT`. |
 | `genesis x402 pricing` | Display x402 payment tiers: signal queries (0.001 USDT), strategy subscriptions (0.01 USDT), parameter purchases (1.00 USDT), NFT licensing (5.00 USDT). |
+| `genesis x402 pay [product] [token] [payer]` | Process an x402 payment using any ERC-20 token. Automatically swaps to USDT via `pay-with-any-token` Uniswap skill if the payer's token is not USDT. Products: `signal_query`, `strategy_subscribe`, `strategy_params_buy`, `nft_license`. |
 
 ## Strategy Presets
 

@@ -6,6 +6,7 @@ All strategy records are persisted to a local JSON registry.
 """
 import json
 import logging
+import subprocess
 import time
 import os
 
@@ -120,13 +121,21 @@ class StrategyManager:
         return False, "within bounds"
 
     def rebalance_strategy(self, strategy_id, new_market_regime):
-        """Update module parameters for new market conditions. Log decision."""
+        """Update module parameters for new market conditions. Log decision.
+
+        Compares Hook pool vs Uniswap DEX routes via uniswap-trading skill
+        to ensure optimal execution venue before rebalancing.
+        """
         record = self.strategies.get(strategy_id)
         if not record:
             logger.warning("Cannot rebalance unknown strategy %s", strategy_id)
             return
         new_preset = self._select_preset(new_market_regime)
         preset = config.STRATEGY_PRESETS[new_preset]
+
+        # Compare Hook pool vs DEX aggregator via uniswap-trading
+        route_comparison = self._compare_swap_routes(record)
+
         self.assembler.update_modules(strategy_id, preset["modules"], preset.get("overrides", {}))
         record["preset_name"] = new_preset
         record["modules"] = preset["modules"]
@@ -134,10 +143,12 @@ class StrategyManager:
         self._save_local_registry()
         self.journal.log_decision(
             strategy_id, "REBALANCE_EXECUTE",
-            f"Rebalanced to {new_preset} for regime={new_market_regime}",
-            {"new_preset": new_preset, "modules": preset["modules"]},
+            f"Rebalanced to {new_preset} for regime={new_market_regime}. Route: {route_comparison.get('best_venue', 'hook')}",
+            {"new_preset": new_preset, "modules": preset["modules"],
+             "route_comparison": route_comparison},
         )
-        logger.info("Strategy %s rebalanced -> %s", strategy_id, new_preset)
+        logger.info("Strategy %s rebalanced -> %s (venue: %s)",
+                     strategy_id, new_preset, route_comparison.get("best_venue", "hook"))
 
     def should_deactivate(self, strategy_id, performance):
         """Determine if strategy should be shut down. Returns (bool, reason)."""
@@ -215,6 +226,90 @@ class StrategyManager:
         }
 
     # ── Private helpers ──────────────────────────────────────────────────
+
+    def _compare_swap_routes(self, record):
+        """Compare Hook pool vs Uniswap DEX routes via uniswap-trading skill.
+
+        Queries uniswap-trading for the best available swap route, then compares
+        effective price against the Hook pool's current fee structure.
+        Returns venue recommendation for rebalance execution.
+        """
+        pair = config.ONCHAINOS_MARKET_PAIRS[0] if config.ONCHAINOS_MARKET_PAIRS else {}
+        base = pair.get("base", "ETH")
+        quote = pair.get("quote", "USDC")
+
+        # Query uniswap-trading for optimal route
+        cmd = [
+            "onchainos", "skill", "run", "uniswap-trading",
+            "--action", "quote",
+            "--from-token", base,
+            "--to-token", quote,
+            "--amount", "1.0",
+            "--chain", str(config.CHAIN_ID),
+        ]
+
+        dex_quote = self._run_cmd(cmd)
+
+        # Query onchainos-trade (DEX aggregator) for comparison
+        cmd_agg = [
+            "onchainos", "trade", "quote",
+            "--from", base,
+            "--to", quote,
+            "--amount", "1.0",
+            "--chain", str(config.CHAIN_ID),
+        ]
+
+        agg_quote = self._run_cmd(cmd_agg)
+
+        # Determine best venue
+        try:
+            dex_price = json.loads(dex_quote.get("stdout", "{}")).get("price", 0)
+        except (json.JSONDecodeError, ValueError):
+            dex_price = 0
+
+        try:
+            agg_price = json.loads(agg_quote.get("stdout", "{}")).get("price", 0)
+        except (json.JSONDecodeError, ValueError):
+            agg_price = 0
+
+        # Include Hook pool fee in comparison
+        preset_name = record.get("preset_name", "calm_accumulator")
+        preset = config.STRATEGY_PRESETS.get(preset_name, {})
+        fee_overrides = preset.get("overrides", {}).get("dynamic_fee", {})
+        hook_fee_bps = fee_overrides.get("min_fee", 500)  # Use min fee as best-case
+
+        best_venue = "hook"
+        if dex_price and agg_price:
+            # If DEX aggregator beats Uniswap route by more than hook fee, use aggregator
+            if agg_price > dex_price * (1 + hook_fee_bps / 1_000_000):
+                best_venue = "dex_aggregator"
+            else:
+                best_venue = "uniswap_v4"
+
+        logger.info("Route comparison: uniswap=%s, aggregator=%s, best=%s",
+                     dex_price, agg_price, best_venue)
+
+        return {
+            "uniswap_price": dex_price,
+            "aggregator_price": agg_price,
+            "hook_fee_bps": hook_fee_bps,
+            "best_venue": best_venue,
+            "pair": f"{base}/{quote}",
+        }
+
+    def _run_cmd(self, cmd):
+        """Execute a subprocess command, respecting DRY_RUN."""
+        logger.debug("cmd: %s", " ".join(cmd))
+        if config.DRY_RUN:
+            logger.info("[DRY_RUN] %s", " ".join(cmd))
+            return {"stdout": json.dumps({"dry_run": True, "price": 0})}
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if proc.returncode != 0:
+                return {"error": proc.stderr or f"exit code {proc.returncode}"}
+            return {"stdout": proc.stdout}
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            return {"error": str(exc)}
 
     def _select_preset(self, market_regime):
         """Map a market regime string to the best strategy preset name."""

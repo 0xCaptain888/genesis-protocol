@@ -27,7 +27,9 @@ Genesis is an AI Agent Skill that autonomously generates, deploys, and manages c
 python3 demo.py
 ```
 
-The demo simulates a complete AI agent lifecycle with realistic market data:
+[![Genesis Protocol Demo](https://asciinema.org/a/eb4XTEwMtod594xz.svg)](https://asciinema.org/a/eb4XTEwMtod594xz)
+
+The demo connects to X Layer Testnet to read live chain state, then simulates a complete AI agent lifecycle:
 
 - **Layer 1 Perception** — Fetches market prices, wallet balances, strategy states
 - **Layer 2 Analysis** — Computes volatility, classifies market regime
