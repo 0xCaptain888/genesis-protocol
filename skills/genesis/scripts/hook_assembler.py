@@ -145,6 +145,16 @@ class HookAssembler:
         preset_name, modules = self.select_modules(market_regime)
         params_map = self.compute_params(preset_name, market_data)
 
+        # Validate hook compatibility before deploying
+        compat = self.validate_hook_compatibility(modules)
+        if compat.get("error"):
+            logger.error("Hook compatibility validation failed: %s", compat)
+            return {"error": "hook_validation_failed", "detail": compat}
+        if not compat.get("compatible", True):
+            logger.error("Modules are not compatible with Uniswap V4: %s", compat)
+            return {"error": "hook_incompatible", "detail": compat}
+        logger.info("Hook compatibility validated for modules %s", modules)
+
         deployed: dict[str, str] = {}
         for mod in modules:
             addr = self.deploy_module(mod, params_map[mod])
@@ -179,6 +189,43 @@ class HookAssembler:
                 "create_strategy_usd": round(create, 6),
                 "total_usd": round(deploy + register + create, 6),
                 "num_transactions": n * 2 + 1, "note": "X Layer gas ~$0.0005/tx"}
+
+    # ── Uniswap AI Skills Integration ────────────────────────────────────
+
+    def validate_hook_compatibility(self, module_names: list[str]) -> dict:
+        """Validate that the selected Hook modules are compatible with Uniswap V4.
+
+        Calls the ``uniswap-hooks`` skill via the onchainos CLI.
+        Returns the skill response dict, or an error dict on failure.
+        """
+        cmd = ["onchainos", "skill", "run", "uniswap-hooks", "validate",
+               "--modules", json.dumps(module_names),
+               "--chain", str(config.CHAIN_ID)]
+        logger.info("Validating hook compatibility for modules %s", module_names)
+        result = self._run_cmd(cmd)
+        if "error" in result:
+            logger.error("uniswap-hooks validate failed: %s", result)
+        else:
+            logger.info("uniswap-hooks validate result: %s", result)
+        return result
+
+    def get_v4_pool_params(self, base: str, quote: str, fee_tier: int) -> dict:
+        """Get recommended Uniswap V4 pool parameters for a trading pair.
+
+        Calls the ``uniswap-hooks`` skill via the onchainos CLI.
+        Returns the skill response dict, or an error dict on failure.
+        """
+        cmd = ["onchainos", "skill", "run", "uniswap-hooks", "pool-params",
+               "--pair", f"{base}/{quote}",
+               "--fee-tier", str(fee_tier),
+               "--chain", str(config.CHAIN_ID)]
+        logger.info("Fetching V4 pool params for %s/%s (fee_tier=%d)", base, quote, fee_tier)
+        result = self._run_cmd(cmd)
+        if "error" in result:
+            logger.error("uniswap-hooks pool-params failed: %s", result)
+        else:
+            logger.info("uniswap-hooks pool-params result: %s", result)
+        return result
 
     # ── Internal Helpers ──────────────────────────────────────────────────
 

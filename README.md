@@ -19,6 +19,96 @@ Genesis is an AI Agent Skill that autonomously generates, deploys, and manages c
 - **x402 Payment Monetization** — Signal queries, strategy subscriptions, parameter purchases, NFT licensing
 - **X Layer Native** — Zero gas fees with USDG/USDT, ~$0.0005/tx, 1s block time
 
+## Demo
+
+### Run the Cognitive Cycle Demo
+
+```bash
+python3 demo.py
+```
+
+The demo simulates a complete AI agent lifecycle with realistic market data:
+
+- **Layer 1 Perception** — Fetches market prices, wallet balances, strategy states
+- **Layer 2 Analysis** — Computes volatility, classifies market regime
+- **Layer 3 Planning** — Generates action plan with confidence scoring
+- **Layer 4 Evolution** — Reviews performance, adjusts internal parameters
+- **Layer 5 Meta-Cognition** — Self-assessment, bias detection
+- **NFT Check** — Evaluates mint eligibility and mints Strategy NFT
+
+### On-Chain Activity (X Layer Testnet)
+
+All contracts are deployed and actively used on X Layer Testnet (Chain 1952):
+
+| Metric | Value |
+|--------|-------|
+| Strategies created | 1 |
+| Decision journal entries | 5 |
+| Swaps processed | 2 (5.5 ETH volume) |
+| Strategy NFTs minted | 1 (Token #0) |
+| P&L recorded | +150 bps |
+
+Explorer: [View on OKLink](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
+
+## Agent Interaction Example
+
+Genesis is designed as a **Skill** for AI agents. Here's how an agent interacts with Genesis through natural language:
+
+```
+User: "The market looks volatile today. What should we do?"
+
+Agent: Let me check the current market conditions.
+> genesis market
+
+  ETH/USDC: $2,450  vol=5.8%  trend=volatile
+  OKB/USDT: $48.50  vol=4.2%  trend=sideways
+
+  Recommended regime: volatile_defender
+  Confidence: 0.87
+
+The volatility is elevated. I recommend switching to the volatile_defender
+preset which activates all three modules including MEV protection.
+
+> genesis create-strategy volatile_defender
+
+  Strategy #1 created with modules:
+  - DynamicFeeModule (fee range: 0.10% - 1.50%)
+  - MEVProtectionModule (blocking enabled)
+  - AutoRebalanceModule (70% trigger, 120s cooldown)
+
+  Decision logged: STRATEGY_CREATE (on-chain confirmed)
+
+User: "How is our existing strategy performing?"
+
+Agent: > genesis status
+
+  Strategy #0: calm_accumulator
+  - P&L: +1.5% (150 bps)
+  - Swaps: 128 processed
+  - Runtime: 72 hours
+  - NFT eligible: Yes ✓
+
+  Strategy #1: volatile_defender
+  - P&L: 0% (just created)
+  - Swaps: 0
+  - Runtime: 0 hours
+
+User: "Mint the NFT for strategy 0."
+
+Agent: > genesis mint-nft 0
+
+  ✓ All thresholds met (P&L ≥1%, Swaps ≥50, Runtime ≥48h)
+  Minting Strategy NFT...
+
+  Token ID: 0
+  Contract: 0xd969448dfc24Fe3Aff25e86db338fAB41b104319
+  Metadata: on-chain (modules, params, P&L, market state)
+  ✓ NFT minted successfully!
+```
+
+The agent uses Genesis commands to perceive markets, create strategies,
+monitor performance, and mint NFTs — all through conversational interaction.
+
 ## Architecture
 
 ```

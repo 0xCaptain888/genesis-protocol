@@ -197,6 +197,47 @@ class MarketOracle:
             )
         return data
 
+    # -- Uniswap AI Skills Integration --------------------------------- #
+
+    def get_uniswap_pool_data(
+        self, token_in: str, token_out: str
+    ) -> dict | None:
+        """Get Uniswap pool liquidity and pricing data via the uniswap-trading skill.
+
+        Returns the skill response dict, or ``None`` on failure.
+        """
+        cmd = ["onchainos", "skill", "run", "uniswap-trading", "pool-info",
+               "--token-in", token_in,
+               "--token-out", token_out,
+               "--chain", str(config.CHAIN_ID)]
+        logger.info("Fetching Uniswap pool data for %s -> %s", token_in, token_out)
+        data = self._run_cmd(cmd)
+        if data is not None:
+            logger.info("Uniswap pool data %s/%s: %s", token_in, token_out, data)
+        else:
+            logger.error("Failed to fetch Uniswap pool data for %s/%s", token_in, token_out)
+        return data
+
+    def get_optimal_swap_route(
+        self, token_in: str, token_out: str, amount: float
+    ) -> dict | None:
+        """Get the optimal Uniswap swap route via the uniswap-trading skill.
+
+        Returns the skill response dict with route information, or ``None`` on failure.
+        """
+        cmd = ["onchainos", "skill", "run", "uniswap-trading", "route",
+               "--token-in", token_in,
+               "--token-out", token_out,
+               "--amount", str(amount),
+               "--chain", str(config.CHAIN_ID)]
+        logger.info("Fetching optimal swap route %s -> %s (amount=%s)", token_in, token_out, amount)
+        data = self._run_cmd(cmd)
+        if data is not None:
+            logger.info("Optimal route %s->%s: %s", token_in, token_out, data)
+        else:
+            logger.error("Failed to fetch optimal swap route for %s->%s", token_in, token_out)
+        return data
+
     # -- Internal helpers ------------------------------------------------ #
 
     def _run_cmd(self, cmd: list[str]) -> dict | None:
