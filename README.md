@@ -46,6 +46,19 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 ├──────────────────────┼──────────────┼───────────────────┤
 │                 X Layer (Chain 196)                      │
 │                                                         │
+│  ┌──────────────────────────────────────────────┐      │
+│  │         Uniswap V4 Core (X Layer)            │      │
+│  │  PoolManager · PositionManager · Quoter      │      │
+│  └───────────────────┬──────────────────────────┘      │
+│                      │ beforeSwap / afterSwap           │
+│                      ▼                                  │
+│  ┌──────────────────────────────────────────────┐      │
+│  │            GenesisV4Hook (IHooks)             │      │
+│  │   Receives callbacks from PoolManager,        │      │
+│  │   delegates module dispatch to Assembler      │      │
+│  └───────────────────┬──────────────────────────┘      │
+│                      │                                  │
+│                      ▼                                  │
 │  ┌────────────────────────────────────────────────┐     │
 │  │          GenesisHookAssembler                   │     │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────────┐   │     │
@@ -58,11 +71,6 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 │  │ StrategyNFT  │  │   Decision Journal       │        │
 │  │  (ERC-721)   │  │   (on-chain log)         │        │
 │  └──────────────┘  └──────────────────────────┘        │
-│                                                         │
-│  ┌──────────────────────────────────────────────┐      │
-│  │         Uniswap V4 Core (X Layer)            │      │
-│  │  PoolManager · PositionManager · Quoter      │      │
-│  └──────────────────────────────────────────────┘      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -75,6 +83,7 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 | Contract | Address |
 |----------|---------|
 | **GenesisHookAssembler** | `0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78` |
+| **GenesisV4Hook** | `0x8435E86c59285981f6161bf58E4793E244C47B35` |
 | **DynamicFeeModule** | `0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed` |
 | **MEVProtectionModule** | `0xA4f6ABd6F77928b06F075637ccBACA8f89e17386` |
 | **AutoRebalanceModule** | `0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee` |
@@ -151,6 +160,8 @@ Genesis leverages Uniswap V4 as its core DeFi primitive:
 ### Smart Contracts
 
 **GenesisHookAssembler** -- The core "meta-hook" factory. Accepts an array of `IGenesisModule` addresses, dispatches `beforeSwap`/`afterSwap` calls to each module, and aggregates results (highest fee wins, any module can block). Includes built-in strategy registry and decision journal.
+
+**GenesisV4Hook** -- Real Uniswap V4 hook implementation. Inherits from IHooks (v4-core), receives beforeSwap/afterSwap callbacks from PoolManager, delegates module dispatch to GenesisHookAssembler. Returns dynamic fees with OVERRIDE_FEE_FLAG for V4 fee override.
 
 | Module | What It Does |
 |--------|-------------|
@@ -238,11 +249,11 @@ The demo connects to X Layer Testnet to read live chain state, then simulates a 
 
 | Metric | Value |
 |--------|-------|
-| Strategies created | 1 |
-| Decision journal entries | 5 |
-| Swaps processed | 2 (5.5 ETH volume) |
-| Strategy NFTs minted | 1 (Token #0) |
-| P&L recorded | +150 bps |
+| Strategies created | 6 |
+| Decision journal entries | 45+ |
+| Swaps processed | 2 |
+| Strategy NFTs minted | 2 |
+| Total transactions | 50+ |
 
 ---
 
@@ -313,6 +324,7 @@ genesis-protocol/
 │   ├── src/
 │   │   ├── IGenesisModule.sol         Module interface
 │   │   ├── GenesisHookAssembler.sol   Core meta-hook factory
+│   │   ├── GenesisV4Hook.sol          Real V4 IHooks implementation
 │   │   ├── StrategyNFT.sol            ERC-721 with on-chain metadata
 │   │   └── modules/
 │   │       ├── DynamicFeeModule.sol   Volatility-responsive fees
@@ -336,6 +348,9 @@ genesis-protocol/
 │       ├── payment_handler.py        x402 payments + pay-with-any-token
 │       └── main.py                    CLI entry point
 │
+├── scripts/
+│   └── generate_chain_activity.py    Automated chain activity generator
+│
 └── tests/                             Python test suite
     ├── test_config.py                 Safety defaults & structure validation
     ├── test_decision_journal.py       Decision logging & hash computation
@@ -357,9 +372,10 @@ genesis-protocol/
 
 ```bash
 cd contracts
+forge install Uniswap/v4-core --no-git  # Already installed
 forge install foundry-rs/forge-std --no-git
 forge build
-forge test -vv
+forge test -vv  # 43 tests pass
 ```
 
 ### Run Python Tests
