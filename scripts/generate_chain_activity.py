@@ -194,28 +194,25 @@ def run_create_strategies(tx_count):
 
 
 SWAP_SCENARIOS = [
-    (True, 1000000, "Normal ETH/USDC buy, 1M units"),
-    (False, 500000, "ETH/USDC sell, 500K units"),
-    (True, 2500000, "Large OKB/USDT buy, high fee expected"),
-    (False, 750000, "Medium sell during volatile regime"),
+    (0, True,  "1000000000000000000", "Normal ETH/USDC buy, 1 ETH"),
+    (0, False, "500000000000000000",  "ETH/USDC sell, 0.5 ETH"),
+    (1, True,  "2500000000000000000", "Large OKB/USDT buy, 2.5 ETH"),
+    (2, False, "750000000000000000",  "Medium sell during volatile regime, 0.75 ETH"),
 ]
 
+WALLET = "0xd2D120eB7cEd38551cCeFb48021067d41D6542d3"
 
 def run_swap_simulations(tx_count):
-    """Send onBeforeSwap calls to simulate hook processing."""
+    """Send onBeforeSwap calls to process swaps through hook modules."""
     section(f"SWAP SIMULATIONS ({len(SWAP_SCENARIOS)} transactions)")
     sent = 0
-    for i, (zero_for_one, amount, note) in enumerate(SWAP_SCENARIOS):
+    for i, (strategy_id, zero_for_one, amount, note) in enumerate(SWAP_SCENARIOS):
         z = "true" if zero_for_one else "false"
-        # The deployed contract uses: onBeforeSwap(uint256,address,(bool,int256,uint160))
-        # SwapParams tuple: (zeroForOne, amountSpecified, sqrtPriceLimitX96)
-        sqrtPriceLimit = "4295128739" if zero_for_one else "1461446703485210103287273052203988822378723970342"
-        params_tuple = f"({z},{amount},{sqrtPriceLimit})"
-        label = f"Swap {i+1}: {'buy' if zero_for_one else 'sell'} amt={amount} - {note}"
+        label = f"Swap {i+1}: strat#{strategy_id} {'buy' if zero_for_one else 'sell'} - {note}"
         result = cast_send(
             ASSEMBLER,
-            "onBeforeSwap(uint256,address,(bool,int256,uint160))",
-            [str(i % 2), ASSEMBLER, params_tuple],
+            "onBeforeSwap(uint256,address,uint256,bool)",
+            [str(strategy_id), WALLET, amount, z],
             label,
         )
         sent += 1 if result else 0

@@ -252,10 +252,10 @@ The demo connects to X Layer Testnet to read live chain state, then simulates a 
 |--------|-------|
 | Strategies created | 6 |
 | Decision journal entries | 61 |
-| Swaps processed | 2 |
+| Swaps processed | 11 |
 | Strategy NFTs minted | 2 |
 | Autonomous agent cycles | 3 (with parameter evolution) |
-| Total transactions | 80+ |
+| Total transactions | 90+ |
 
 ---
 
