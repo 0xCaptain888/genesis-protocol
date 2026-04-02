@@ -1,0 +1,17 @@
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/lib/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Data directories (created at runtime)
+decisions/
+strategies/
+
+# Environment
+.env
+*.key
