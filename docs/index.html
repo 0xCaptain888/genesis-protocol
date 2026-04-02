@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Genesis Protocol - AI-Powered Uniswap V4 Hook Engine on X Layer</title>
+<title>Genesis Protocol - AI 驱动的 Uniswap V4 Hook 策略引擎 | X Layer</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--neon:#00f0ff;--purple:#a855f7;--dark:#0a0e1a;--card:#111827}
 *{margin:0;padding:0;box-sizing:border-box;scroll-behavior:smooth}
-body{font-family:'JetBrains Mono',monospace}
+body{font-family:'Noto Sans SC','JetBrains Mono',monospace}
 h1,h2,h3,.orb{font-family:'Orbitron',sans-serif}
 .glow{text-shadow:0 0 20px var(--neon),0 0 60px var(--neon)}
 .glow-p{text-shadow:0 0 20px var(--purple),0 0 60px var(--purple)}
@@ -45,15 +45,15 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <div class="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
 <a href="#" class="orb text-sm font-bold text-[var(--neon)]">GENESIS</a>
 <div class="hidden md:flex gap-6 text-xs text-gray-400">
-<a href="#dashboard" class="hover:text-[var(--neon)]">Dashboard</a>
-<a href="#strategies" class="hover:text-[var(--neon)]">Strategies</a>
-<a href="#journal" class="hover:text-[var(--neon)]">Journal</a>
-<a href="#nfts" class="hover:text-[var(--neon)]">NFTs</a>
-<a href="#architecture" class="hover:text-[var(--neon)]">Architecture</a>
+<a href="#dashboard" class="hover:text-[var(--neon)]">仪表盘</a>
+<a href="#strategies" class="hover:text-[var(--neon)]">策略管理</a>
+<a href="#journal" class="hover:text-[var(--neon)]">决策日志</a>
+<a href="#nfts" class="hover:text-[var(--neon)]">策略 NFT</a>
+<a href="#architecture" class="hover:text-[var(--neon)]">架构</a>
 </div>
 <div class="flex items-center gap-3">
-<span id="network-badge" class="badge text-gray-500">Disconnected</span>
-<button id="connect-btn" onclick="connectWallet()" class="neon-btn text-xs py-2 px-4">Connect Wallet</button>
+<span id="network-badge" class="badge text-gray-500">未连接</span>
+<button id="connect-btn" onclick="connectWallet()" class="neon-btn text-xs py-2 px-4">连接钱包</button>
 </div>
 </div>
 </nav>
@@ -62,13 +62,13 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <div class="text-center px-4">
 <p class="text-[var(--neon)] text-xs tracking-[.3em] mb-3 opacity-80">OKX BUILD X HACKATHON 2026</p>
 <h1 class="text-5xl md:text-7xl font-black glow mb-4 orb">GENESIS<br>PROTOCOL</h1>
-<p class="text-base text-gray-400 max-w-xl mx-auto mb-6">AI-Powered Uniswap V4 Hook Strategy Engine on X Layer</p>
+<p class="text-base text-gray-400 max-w-xl mx-auto mb-6">面向 X Layer 的 AI 驱动 Uniswap V4 Hook 策略引擎</p>
 <div class="flex gap-3 justify-center flex-wrap mb-6">
-<button onclick="connectWallet()" class="neon-btn">Connect Wallet</button>
-<a href="#dashboard" class="outline-btn">View Dashboard</a>
+<button onclick="connectWallet()" class="neon-btn">连接钱包</button>
+<a href="#dashboard" class="outline-btn">查看仪表盘</a>
 </div>
 <div class="flex gap-4 justify-center flex-wrap">
-<span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400 pulse"></span> Powered by Onchain OS</span>
+<span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400 pulse"></span> Onchain OS 驱动</span>
 <span class="badge"><span class="w-2 h-2 rounded-full bg-pink-400 pulse"></span> Uniswap V4</span>
 <span class="badge"><span class="w-2 h-2 rounded-full bg-purple-400 pulse"></span> X Layer</span>
 </div>
@@ -77,146 +77,146 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <!-- Dashboard -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="dashboard">
 <div class="flex items-center justify-between mb-8">
-<h2 class="text-2xl font-bold glow orb">Live Dashboard</h2>
-<span id="refresh-status" class="text-xs text-gray-500">Auto-refresh: 15s</span>
+<h2 class="text-2xl font-bold glow orb">实时仪表盘</h2>
+<span id="refresh-status" class="text-xs text-gray-500">自动刷新: 15秒</span>
 </div>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="stat-strategies">--</p><p class="text-xs text-gray-500 mt-1">Strategies</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb" id="stat-decisions">--</p><p class="text-xs text-gray-500 mt-1">Decisions</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb" id="stat-swaps">--</p><p class="text-xs text-gray-500 mt-1">Swaps Processed</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb" id="stat-nfts">--</p><p class="text-xs text-gray-500 mt-1">NFTs Minted</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="stat-strategies">--</p><p class="text-xs text-gray-500 mt-1">已创建策略</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb" id="stat-decisions">--</p><p class="text-xs text-gray-500 mt-1">决策记录</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb" id="stat-swaps">--</p><p class="text-xs text-gray-500 mt-1">已处理 Swap</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb" id="stat-nfts">--</p><p class="text-xs text-gray-500 mt-1">已铸造 NFT</p></div>
 </div>
 <div class="grid md:grid-cols-2 gap-4 mb-8">
-<div class="card p-5"><p class="text-xs text-gray-500 mb-1">Total Volume Processed</p><p class="text-xl font-bold text-[var(--neon)]" id="stat-volume">--</p></div>
-<div class="card p-5"><p class="text-xs text-gray-500 mb-1">Contract Deployed</p><p class="text-xl font-bold text-gray-300" id="stat-deployed">--</p></div>
+<div class="card p-5"><p class="text-xs text-gray-500 mb-1">总处理交易量</p><p class="text-xl font-bold text-[var(--neon)]" id="stat-volume">--</p></div>
+<div class="card p-5"><p class="text-xs text-gray-500 mb-1">合约部署时间</p><p class="text-xl font-bold text-gray-300" id="stat-deployed">--</p></div>
 </div>
 <div class="card p-5">
-<p class="text-xs text-gray-500 mb-3">Cumulative Protocol Metrics <span class="text-gray-600">(live from contract)</span></p>
+<p class="text-xs text-gray-500 mb-3">协议累计指标 <span class="text-gray-600">(链上实时数据)</span></p>
 <div id="chart-activity" style="height:200px"></div>
 </div>
 <!-- On-Chain Activity (Real Data) -->
 <div class="mt-8">
-<h3 class="text-sm font-bold text-[var(--neon)] orb mb-4">On-Chain Activity (Verified) <span class="text-gray-600 text-xs font-normal">Live from contract</span></h3>
+<h3 class="text-sm font-bold text-[var(--neon)] orb mb-4">链上活动（已验证）<span class="text-gray-600 text-xs font-normal">合约实时读取</span></h3>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="verified-strategies">--</p><p class="text-xs text-gray-500 mt-1">Strategies Created</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb" id="verified-decisions">--</p><p class="text-xs text-gray-500 mt-1">Decision Journal Entries</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb" id="verified-nfts">--</p><p class="text-xs text-gray-500 mt-1">Strategy NFTs Minted</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb" id="verified-swaps">--</p><p class="text-xs text-gray-500 mt-1">Swaps Processed</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="verified-strategies">--</p><p class="text-xs text-gray-500 mt-1">已创建策略</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb" id="verified-decisions">--</p><p class="text-xs text-gray-500 mt-1">决策日志条目</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb" id="verified-nfts">--</p><p class="text-xs text-gray-500 mt-1">已铸造策略 NFT</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb" id="verified-swaps">--</p><p class="text-xs text-gray-500 mt-1">已处理 Swap</p></div>
 </div>
 </div>
 <!-- Recent Transactions -->
 <div class="mt-8">
-<h3 class="text-sm font-bold text-[var(--purple)] orb mb-4">Recent Transactions</h3>
+<h3 class="text-sm font-bold text-[var(--purple)] orb mb-4">最近交易</h3>
 <div id="recent-tx-list" class="space-y-2">
-<div class="text-center py-4 text-gray-600 text-xs">Loading recent transactions...</div>
+<div class="text-center py-4 text-gray-600 text-xs">正在加载最近交易...</div>
 </div>
 <div class="mt-3 text-center">
-<a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-xs text-[var(--neon)] hover:underline">View all transactions on X Layer Explorer &rarr;</a>
+<a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-xs text-[var(--neon)] hover:underline">在 X Layer 浏览器查看所有交易 &rarr;</a>
 </div>
 </div>
 </section>
 <!-- Strategy Manager -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="strategies">
-<h2 class="text-2xl font-bold glow orb mb-8">Strategy Manager</h2>
+<h2 class="text-2xl font-bold glow orb mb-8">策略管理器</h2>
 <div class="card p-6 mb-8">
-<h3 class="text-sm font-bold text-[var(--neon)] mb-4 orb">Create New Strategy</h3>
+<h3 class="text-sm font-bold text-[var(--neon)] mb-4 orb">创建新策略</h3>
 <div class="grid md:grid-cols-3 gap-4 mb-4">
 <div>
-<label class="text-xs text-gray-500 block mb-1">Preset</label>
+<label class="text-xs text-gray-500 block mb-1">预设</label>
 <select id="preset-select" onchange="updatePresetInfo()">
-<option value="calm">Calm Accumulator</option>
-<option value="volatile" selected>Volatile Defender</option>
-<option value="trend">Trend Rider</option>
+<option value="calm">稳健积累型</option>
+<option value="volatile" selected>波动防御型</option>
+<option value="trend">趋势跟踪型</option>
 </select>
 </div>
 <div>
-<label class="text-xs text-gray-500 block mb-1">Modules</label>
+<label class="text-xs text-gray-500 block mb-1">模块组合</label>
 <div id="modules-display" class="text-xs text-gray-300 py-2">DynamicFee + MEV + AutoRebalance</div>
 </div>
 <div>
-<label class="text-xs text-gray-500 block mb-1">Risk Level</label>
-<div id="risk-display" class="text-xs py-2"><span class="text-yellow-400">Defensive</span></div>
+<label class="text-xs text-gray-500 block mb-1">风险等级</label>
+<div id="risk-display" class="text-xs py-2"><span class="text-yellow-400">防御型</span></div>
 </div>
 </div>
 <div class="flex gap-3">
-<button id="deploy-btn" onclick="deployStrategy()" class="neon-btn text-xs" disabled>Deploy Strategy (Connect Wallet)</button>
-<button onclick="simulateStrategy()" class="outline-btn text-xs">Simulate</button>
+<button id="deploy-btn" onclick="deployStrategy()" class="neon-btn text-xs" disabled>部署策略（请先连接钱包）</button>
+<button onclick="simulateStrategy()" class="outline-btn text-xs">模拟运行</button>
 </div>
 <div id="deploy-status" class="text-xs text-gray-500 mt-3 hidden"></div>
 </div>
 <!-- Active Strategies Table -->
 <div class="card p-6">
-<h3 class="text-sm font-bold text-[var(--neon)] mb-4 orb">Active Strategies</h3>
+<h3 class="text-sm font-bold text-[var(--neon)] mb-4 orb">活跃策略</h3>
 <div class="overflow-x-auto">
 <table class="w-full text-xs">
 <thead><tr class="text-gray-500 border-b border-gray-800">
-<th class="text-left py-2 px-2">ID</th><th class="text-left py-2 px-2">Modules</th><th class="text-right py-2 px-2">Swaps</th><th class="text-right py-2 px-2">Volume</th><th class="text-right py-2 px-2">P&L</th><th class="text-center py-2 px-2">Status</th>
+<th class="text-left py-2 px-2">ID</th><th class="text-left py-2 px-2">模块</th><th class="text-right py-2 px-2">Swap 数</th><th class="text-right py-2 px-2">交易量</th><th class="text-right py-2 px-2">P&L</th><th class="text-center py-2 px-2">状态</th>
 </tr></thead>
-<tbody id="strategies-table"><tr><td colspan="6" class="text-center py-8 text-gray-600">Loading strategies...</td></tr></tbody>
+<tbody id="strategies-table"><tr><td colspan="6" class="text-center py-8 text-gray-600">正在加载策略...</td></tr></tbody>
 </table>
 </div>
 </div>
 </section>
 <!-- Decision Journal -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="journal">
-<h2 class="text-2xl font-bold glow-p orb mb-8">Decision Journal</h2>
+<h2 class="text-2xl font-bold glow-p orb mb-8">决策日志</h2>
 <div class="card p-6">
 <div id="journal-timeline" class="space-y-4">
-<div class="text-center py-8 text-gray-600 text-xs">Loading decisions from chain...</div>
+<div class="text-center py-8 text-gray-600 text-xs">正在从链上加载决策记录...</div>
 </div>
 </div>
 </section>
 <!-- NFT Gallery -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="nfts">
-<h2 class="text-2xl font-bold glow orb mb-8">Strategy NFT Gallery</h2>
+<h2 class="text-2xl font-bold glow orb mb-8">策略 NFT 画廊</h2>
 <div id="nft-gallery" class="grid md:grid-cols-3 gap-6">
-<div class="text-center py-8 text-gray-600 text-xs col-span-3">Loading NFTs...</div>
+<div class="text-center py-8 text-gray-600 text-xs col-span-3">正在加载 NFT...</div>
 </div>
 </section>
 <!-- Architecture -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="architecture">
-<h2 class="text-2xl font-bold glow orb mb-8 text-center">Architecture</h2>
+<h2 class="text-2xl font-bold glow orb mb-8 text-center">架构概述</h2>
 <div class="card p-6 mb-8">
 <div class="flex flex-wrap justify-center gap-2 text-xs text-gray-400 items-center">
-<span class="px-3 py-2 bg-[#0d1117] rounded border border-cyan-900">Market Data</span>
+<span class="px-3 py-2 bg-[#0d1117] rounded border border-cyan-900">市场数据</span>
 <span class="text-[var(--neon)]">&rarr;</span>
-<span class="px-3 py-2 bg-[#0d1117] rounded border border-purple-900">AI Agent (5-Layer)</span>
+<span class="px-3 py-2 bg-[#0d1117] rounded border border-purple-900">AI Agent（5层认知）</span>
 <span class="text-[var(--neon)]">&rarr;</span>
 <span class="px-3 py-2 bg-[#0d1117] rounded border border-cyan-900">GenesisHookAssembler</span>
 <span class="text-[var(--neon)]">&rarr;</span>
-<span class="px-3 py-2 bg-[#0d1117] rounded border border-purple-900">Hook Modules</span>
+<span class="px-3 py-2 bg-[#0d1117] rounded border border-purple-900">Hook 模块</span>
 <span class="text-[var(--neon)]">&rarr;</span>
-<span class="px-3 py-2 bg-[#0d1117] rounded border border-cyan-900">Uniswap V4 Pool</span>
+<span class="px-3 py-2 bg-[#0d1117] rounded border border-cyan-900">Uniswap V4 池</span>
 <span class="text-[var(--neon)]">&rarr;</span>
-<span class="px-3 py-2 bg-[#0d1117] rounded border border-yellow-900">Strategy NFT</span>
+<span class="px-3 py-2 bg-[#0d1117] rounded border border-yellow-900">策略 NFT</span>
 </div>
 </div>
 <div class="grid md:grid-cols-3 gap-6 mb-8">
 <div class="card p-6">
-<h3 class="text-sm font-bold text-[var(--purple)] orb mb-3">AI Agent Layer</h3>
+<h3 class="text-sm font-bold text-[var(--purple)] orb mb-3">AI Agent 层</h3>
 <ul class="space-y-2 text-xs text-gray-400">
-<li>5-Layer Cognitive Architecture (Perceive &rarr; Evolve)</li>
-<li>Decision journal fully recorded on-chain</li>
-<li>9 Python scripts orchestrating strategy lifecycle</li>
-<li>DRY_RUN=True safe mode by default</li>
+<li>5 层认知架构（感知 &rarr; 分析 &rarr; 规划 &rarr; 进化 &rarr; 元认知）</li>
+<li>决策日志完整记录在链上</li>
+<li>9 个 Python 脚本编排策略生命周期</li>
+<li>默认 DRY_RUN=True 安全模式</li>
 </ul>
 </div>
 <div class="card p-6">
-<h3 class="text-sm font-bold text-[var(--neon)] orb mb-3">X Layer On-Chain</h3>
+<h3 class="text-sm font-bold text-[var(--neon)] orb mb-3">X Layer 链上层</h3>
 <ul class="space-y-2 text-xs text-gray-400">
-<li>GenesisHookAssembler meta-factory contract</li>
-<li>3 composable Uniswap V4 Hook modules</li>
-<li>Strategy NFT (ERC-721) for proven strategies</li>
-<li>Chain 196 mainnet / 1952 testnet, 1s blocks</li>
+<li>GenesisHookAssembler 元工厂合约</li>
+<li>3 个可组合 Uniswap V4 Hook 模块</li>
+<li>策略 NFT（ERC-721）用于验证策略</li>
+<li>Chain 196 主网 / 1952 测试网，1 秒出块</li>
 </ul>
 </div>
 <div class="card p-6" style="border-color:rgba(234,179,8,.2)">
-<h3 class="text-sm font-bold text-yellow-400 orb mb-3">Security Scanner</h3>
+<h3 class="text-sm font-bold text-yellow-400 orb mb-3">安全扫描器</h3>
 <ul class="space-y-2 text-xs text-gray-400">
-<li><span class="text-green-400">&#x2713;</span> onchainos-security integration</li>
-<li><span class="text-green-400">&#x2713;</span> Automated contract vulnerability scanning</li>
-<li><span class="text-green-400">&#x2713;</span> Real-time threat detection on hooks</li>
-<li><span class="text-green-400">&#x2713;</span> Pre-deployment audit checks</li>
+<li><span class="text-green-400">&#x2713;</span> onchainos-security 集成</li>
+<li><span class="text-green-400">&#x2713;</span> 自动合约漏洞扫描</li>
+<li><span class="text-green-400">&#x2713;</span> Hook 实时威胁检测</li>
+<li><span class="text-green-400">&#x2713;</span> 部署前审计检查</li>
 </ul>
 </div>
 </div>
@@ -224,27 +224,27 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 </section>
 <!-- Modules -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="modules">
-<h2 class="text-2xl font-bold glow orb mb-8 text-center">Hook Modules</h2>
+<h2 class="text-2xl font-bold glow orb mb-8 text-center">Hook 模块</h2>
 <div class="grid md:grid-cols-3 gap-6">
 <div class="card p-6 text-center">
 <div class="text-3xl mb-2 text-[var(--neon)]">&#x2194;</div>
-<h3 class="font-bold text-sm mb-1 orb">DynamicFeeModule</h3>
-<p class="text-[var(--neon)] text-xs mb-2 orb">Fee = f(volatility)</p>
-<p class="text-xs text-gray-500 mb-3">Dynamically adjusts swap fees based on real-time market volatility. Low vol = low fees, high vol = high fees.</p>
+<h3 class="font-bold text-sm mb-1 orb">动态费率模块</h3>
+<p class="text-[var(--neon)] text-xs mb-2 orb">费率 = f(波动率)</p>
+<p class="text-xs text-gray-500 mb-3">根据实时市场波动率动态调整 Swap 费率。低波动率 = 低费率，高波动率 = 高费率。</p>
 <div id="chart-fee" style="height:100px"></div>
 </div>
 <div class="card p-6 text-center">
 <div class="text-3xl mb-2 text-[var(--purple)]">&#x1F6E1;</div>
-<h3 class="font-bold text-sm mb-1 orb">MEVProtectionModule</h3>
-<p class="text-[var(--purple)] text-xs mb-2 orb">Sandwich Detection</p>
-<p class="text-xs text-gray-500 mb-3">Real-time detection and blocking of sandwich attacks to protect LPs from MEV extraction.</p>
-<div class="text-xs text-left bg-black/50 rounded p-3 font-mono"><span class="text-red-400">TX1 Buy</span> &rarr; <span class="text-yellow-400">Victim</span> &rarr; <span class="text-red-400">TX2 Sell</span><br><span class="text-green-400 mt-1 block">&rarr; Shield: Blocked</span></div>
+<h3 class="font-bold text-sm mb-1 orb">MEV 防护模块</h3>
+<p class="text-[var(--purple)] text-xs mb-2 orb">三明治攻击检测</p>
+<p class="text-xs text-gray-500 mb-3">实时检测并阻断三明治攻击，保护 LP 免受 MEV 提取。</p>
+<div class="text-xs text-left bg-black/50 rounded p-3 font-mono"><span class="text-red-400">TX1 买入</span> &rarr; <span class="text-yellow-400">受害者</span> &rarr; <span class="text-red-400">TX2 卖出</span><br><span class="text-green-400 mt-1 block">&rarr; 防护盾: 已阻断</span></div>
 </div>
 <div class="card p-6 text-center">
 <div class="text-3xl mb-2 text-cyan-300">&#x21C5;</div>
-<h3 class="font-bold text-sm mb-1 orb">AutoRebalanceModule</h3>
-<p class="text-cyan-300 text-xs mb-2 orb">IL Protection</p>
-<p class="text-xs text-gray-500 mb-3">Automatically rebalances liquidity positions when price deviates from range boundaries.</p>
+<h3 class="font-bold text-sm mb-1 orb">自动再平衡模块</h3>
+<p class="text-cyan-300 text-xs mb-2 orb">无常损失防护</p>
+<p class="text-xs text-gray-500 mb-3">当价格偏离范围边界时自动再平衡流动性头寸。</p>
 <div id="chart-range" style="height:100px"></div>
 </div>
 </div>
@@ -252,7 +252,7 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <!-- Footer -->
 <footer class="border-t border-gray-800 mt-16">
 <div class="max-w-6xl mx-auto px-4 py-12">
-<h3 class="orb text-sm text-[var(--neon)] mb-6">Deployed Contracts (X Layer Testnet, Chain 1952)</h3>
+<h3 class="orb text-sm text-[var(--neon)] mb-6">已部署合约（X Layer 测试网, Chain 1952）</h3>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs mb-8">
 <div class="card p-3 flex justify-between"><span class="text-gray-500">GenesisHookAssembler</span><a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xC5E851...C78</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">Assembler V2 (Swap Pipeline)</span><a href="https://www.oklink.com/xlayer-test/address/0x8da3b913362aa243BC89322Fe8012e70175B6D48" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x8da3b9...D48</a></div>
@@ -264,11 +264,11 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <div class="card p-3 flex justify-between"><span class="text-gray-500">Uniswap V4 PoolManager</span><a href="https://www.oklink.com/xlayer/address/0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x360e68...B32</a></div>
 </div>
 <div class="flex flex-wrap gap-4 justify-center items-center mb-6">
-<span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Powered by Onchain OS</span>
+<span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Onchain OS 驱动</span>
 <span class="badge"><span class="w-2 h-2 rounded-full bg-pink-400"></span> Uniswap V4</span>
 <a href="https://github.com/0xCaptain888/genesis-protocol" target="_blank" class="badge hover:border-[var(--neon)]">GitHub</a>
 </div>
-<p class="text-center text-gray-600 text-xs">Built for OKX Build X Hackathon 2026 | Genesis Protocol</p>
+<p class="text-center text-gray-600 text-xs">为 OKX Build X Hackathon 2026 打造 | Genesis Protocol</p>
 </div>
 </footer>
 <script>
@@ -307,9 +307,9 @@ const NFT_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ];
 const PRESETS = {
-  calm: { name:'Calm Accumulator', modules:[CFG.dynamicFee, CFG.rebalance], risk:'Conservative', color:'#22d3ee' },
-  volatile: { name:'Volatile Defender', modules:[CFG.dynamicFee, CFG.mev, CFG.rebalance], risk:'Defensive', color:'#a855f7' },
-  trend: { name:'Trend Rider', modules:[CFG.dynamicFee, CFG.mev], risk:'Aggressive', color:'#00f0ff' },
+  calm: { name:'稳健积累型', modules:[CFG.dynamicFee, CFG.rebalance], risk:'保守', color:'#22d3ee' },
+  volatile: { name:'波动防御型', modules:[CFG.dynamicFee, CFG.mev, CFG.rebalance], risk:'防御', color:'#a855f7' },
+  trend: { name:'趋势跟踪型', modules:[CFG.dynamicFee, CFG.mev], risk:'激进', color:'#00f0ff' },
 };
 const MOD_NAMES = { [CFG.dynamicFee.toLowerCase()]:'DynamicFee', [CFG.mev.toLowerCase()]:'MEV', [CFG.rebalance.toLowerCase()]:'AutoRebalance' };
 
@@ -323,7 +323,7 @@ const rpcNft = new ethers.Contract(CFG.nft, NFT_ABI, rpcProvider);
 // ── Wallet ──
 async function connectWallet() {
   const w = window.ethereum || window.okxwallet;
-  if (!w) return toast('Install MetaMask or OKX Wallet','red');
+  if (!w) return toast('请安装 MetaMask 或 OKX Wallet','red');
   try {
     provider = new ethers.BrowserProvider(w);
     await provider.send('eth_requestAccounts',[]);
@@ -347,13 +347,13 @@ async function connectWallet() {
     nftC = new ethers.Contract(CFG.nft, NFT_ABI, signer);
     connected = true;
     document.getElementById('connect-btn').textContent = addr.slice(0,6)+'...'+addr.slice(-4);
-    document.getElementById('network-badge').innerHTML = '<span class="w-2 h-2 rounded-full bg-green-400"></span> X Layer Testnet';
+    document.getElementById('network-badge').innerHTML = '<span class="w-2 h-2 rounded-full bg-green-400"></span> X Layer 测试网';
     document.getElementById('deploy-btn').disabled = false;
-    document.getElementById('deploy-btn').textContent = 'Deploy Strategy';
-    toast('Wallet connected: '+addr.slice(0,8)+'...','green');
+    document.getElementById('deploy-btn').textContent = '部署策略';
+    toast('钱包已连接: '+addr.slice(0,8)+'...','green');
     w.on('chainChanged', ()=>location.reload());
     w.on('accountsChanged', ()=>location.reload());
-  } catch(e) { toast('Connection failed: '+e.message,'red'); }
+  } catch(e) { toast('连接失败: '+e.message,'red'); }
 }
 
 // ── Dashboard Data ──
@@ -399,17 +399,17 @@ async function refreshDashboard() {
     // Load NFTs
     const ncount = v(ns)!==null ? Number(v(ns)) : 0;
     await loadNFTs(ncount);
-    document.getElementById('refresh-status').textContent = 'Last: '+new Date().toLocaleTimeString()+' | Auto: 15s';
+    document.getElementById('refresh-status').textContent = '上次: '+new Date().toLocaleTimeString()+' | 自动: 15秒';
   } catch(e) {
     console.warn('Dashboard fetch error:', e);
-    document.getElementById('refresh-status').textContent = 'RPC error - retrying...';
+    document.getElementById('refresh-status').textContent = 'RPC 错误 - 正在重试...';
   }
 }
 
 // ── Strategies ──
 async function loadStrategies(count) {
   const tb = document.getElementById('strategies-table');
-  if (count===0) { tb.innerHTML='<tr><td colspan="6" class="text-center py-8 text-gray-600 text-xs">No strategies deployed yet</td></tr>'; return; }
+  if (count===0) { tb.innerHTML='<tr><td colspan="6" class="text-center py-8 text-gray-600 text-xs">暂无已部署策略</td></tr>'; return; }
   let html='';
   for(let i=1;i<=Math.min(count,20);i++){
     try {
@@ -423,18 +423,18 @@ async function loadStrategies(count) {
         <td class="py-2 px-2 text-right">${Number(s.totalSwaps)}</td>
         <td class="py-2 px-2 text-right">${ethers.formatEther(s.totalVolume).slice(0,8)}</td>
         <td class="py-2 px-2 text-right ${pnlClass}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</td>
-        <td class="py-2 px-2 text-center">${s.active?'<span class="text-green-400">Active</span>':'<span class="text-gray-500">Inactive</span>'}</td>
+        <td class="py-2 px-2 text-center">${s.active?'<span class="text-green-400">活跃</span>':'<span class="text-gray-500">已停止</span>'}</td>
       </tr>`;
     } catch(e) { break; }
   }
-  tb.innerHTML = html || '<tr><td colspan="6" class="text-center py-8 text-gray-600 text-xs">Could not load strategies</td></tr>';
+  tb.innerHTML = html || '<tr><td colspan="6" class="text-center py-8 text-gray-600 text-xs">无法加载策略</td></tr>';
 }
 
 // ── Decisions ──
 const DECISION_TYPES = {};
 async function loadDecisions(count) {
   const el = document.getElementById('journal-timeline');
-  if (count===0) { el.innerHTML='<div class="text-center py-8 text-gray-600 text-xs">No decisions recorded yet</div>'; return; }
+  if (count===0) { el.innerHTML='<div class="text-center py-8 text-gray-600 text-xs">暂无决策记录</div>'; return; }
   let html='';
   const start = Math.max(1, count-9);
   for(let i=count;i>=start;i--){
@@ -446,22 +446,22 @@ async function loadDecisions(count) {
         <div class="timeline-dot"></div>
         <div class="flex-1 pb-4 border-b border-gray-800/30">
           <div class="flex justify-between items-start mb-1">
-            <span class="text-xs text-[var(--neon)]">Strategy #${Number(d.strategyId)}</span>
+            <span class="text-xs text-[var(--neon)]">策略 #${Number(d.strategyId)}</span>
             <span class="text-xs text-gray-500">${dt.toLocaleString()}</span>
           </div>
-          <p class="text-xs text-gray-400">Type: ${typeHex.slice(0,18)}...</p>
-          <p class="text-xs text-gray-600 mt-1">Reasoning: ${d.reasoningHash.slice(0,18)}...</p>
+          <p class="text-xs text-gray-400">类型: ${typeHex.slice(0,18)}...</p>
+          <p class="text-xs text-gray-600 mt-1">推理哈希: ${d.reasoningHash.slice(0,18)}...</p>
         </div>
       </div>`;
     } catch(e) { break; }
   }
-  el.innerHTML = html || '<div class="text-center py-8 text-gray-600 text-xs">Could not load decisions</div>';
+  el.innerHTML = html || '<div class="text-center py-8 text-gray-600 text-xs">无法加载决策记录</div>';
 }
 
 // ── NFTs ──
 async function loadNFTs(count) {
   const el = document.getElementById('nft-gallery');
-  if (count===0) { el.innerHTML='<div class="text-center py-8 text-gray-600 text-xs col-span-3">No NFTs minted yet. Deploy strategies to earn NFTs!</div>'; return; }
+  if (count===0) { el.innerHTML='<div class="text-center py-8 text-gray-600 text-xs col-span-3">暂无 NFT。部署策略以获得 NFT！</div>'; return; }
   let html='';
   for(let i=1;i<=Math.min(count,9);i++){
     try {
@@ -471,19 +471,19 @@ async function loadNFTs(count) {
       const hours = Math.floor(dur/3600);
       html+=`<div class="card p-5 relative overflow-hidden" style="border-color:var(--purple);box-shadow:0 0 30px rgba(168,85,247,.1)">
         <div class="absolute top-0 right-0 w-20 h-20 bg-[var(--purple)] opacity-5 rounded-full blur-2xl"></div>
-        <h3 class="orb text-sm font-bold mb-3">Genesis Strategy #${Number(meta.strategyId)}</h3>
+        <h3 class="orb text-sm font-bold mb-3">Genesis 策略 #${Number(meta.strategyId)}</h3>
         <div class="space-y-2 text-xs">
-          <div class="flex justify-between"><span class="text-gray-500">P&L</span><span class="${pnl>=0?'text-green-400':'text-red-400'}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Swaps</span><span>${Number(meta.totalSwaps)}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Duration</span><span>${hours}h</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Decisions</span><span class="text-[var(--purple)]">${Number(meta.decisionCount)}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Owner</span><span class="truncate-addr text-[var(--neon)]">${owner.slice(0,6)}...${owner.slice(-4)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">收益</span><span class="${pnl>=0?'text-green-400':'text-red-400'}">${pnl>=0?'+':''}${pnl.toFixed(2)}%</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">Swap 数</span><span>${Number(meta.totalSwaps)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">运行时长</span><span>${hours}小时</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">决策数</span><span class="text-[var(--purple)]">${Number(meta.decisionCount)}</span></div>
+          <div class="flex justify-between"><span class="text-gray-500">持有者</span><span class="truncate-addr text-[var(--neon)]">${owner.slice(0,6)}...${owner.slice(-4)}</span></div>
         </div>
-        <div class="mt-3 text-center text-xs text-gray-600">Minted: ${new Date(Number(meta.mintedAt)*1000).toLocaleDateString()}</div>
+        <div class="mt-3 text-center text-xs text-gray-600">铸造时间: ${new Date(Number(meta.mintedAt)*1000).toLocaleDateString()}</div>
       </div>`;
     } catch(e) { break; }
   }
-  el.innerHTML = html || '<div class="text-center py-8 text-gray-600 text-xs col-span-3">Could not load NFT data</div>';
+  el.innerHTML = html || '<div class="text-center py-8 text-gray-600 text-xs col-span-3">无法加载 NFT 数据</div>';
 }
 
 // ── Strategy Deployment ──
@@ -494,29 +494,29 @@ function updatePresetInfo() {
   document.getElementById('risk-display').innerHTML = `<span style="color:${p.color}">${p.risk}</span>`;
 }
 async function deployStrategy() {
-  if(!connected) return toast('Connect wallet first','red');
+  if(!connected) return toast('请先连接钱包','red');
   const p = PRESETS[document.getElementById('preset-select').value];
   const statusEl = document.getElementById('deploy-status');
   statusEl.classList.remove('hidden');
-  statusEl.textContent = 'Sending transaction...';
+  statusEl.textContent = '正在发送交易...';
   try {
     const tx = await assemblerC.createStrategy(p.modules);
-    statusEl.textContent = 'TX sent: '+tx.hash.slice(0,16)+'... Waiting for confirmation...';
+    statusEl.textContent = '交易已发送: '+tx.hash.slice(0,16)+'... 等待确认中...';
     const receipt = await tx.wait();
-    statusEl.innerHTML = '<span class="text-green-400">Strategy deployed! TX: '+receipt.hash.slice(0,16)+'...</span>';
-    toast('Strategy deployed successfully!','green');
+    statusEl.innerHTML = '<span class="text-green-400">策略部署成功！TX: '+receipt.hash.slice(0,16)+'...</span>';
+    toast('策略部署成功！','green');
     setTimeout(refreshDashboard, 2000);
   } catch(e) {
-    statusEl.innerHTML = '<span class="text-red-400">Failed: '+(e.reason||e.message).slice(0,80)+'</span>';
-    toast('Deploy failed','red');
+    statusEl.innerHTML = '<span class="text-red-400">失败: '+(e.reason||e.message).slice(0,80)+'</span>';
+    toast('部署失败','red');
   }
 }
 function simulateStrategy() {
   const p = PRESETS[document.getElementById('preset-select').value];
-  toast('Simulating '+p.name+'... (read-only, no TX)','cyan');
+  toast('正在模拟 '+p.name+'...（只读，无交易）','cyan');
   const statusEl = document.getElementById('deploy-status');
   statusEl.classList.remove('hidden');
-  statusEl.innerHTML = `<span class="text-cyan-400">Simulation: ${p.name} with ${p.modules.length} modules. Risk: ${p.risk}. Estimated gas: ~250k</span>`;
+  statusEl.innerHTML = `<span class="text-cyan-400">模拟结果: ${p.name}，${p.modules.length} 个模块。风险: ${p.risk}。预估 Gas: ~250k</span>`;
 }
 
 // ── Toast ──
@@ -536,7 +536,7 @@ function initCharts() {
   // Activity chart - will be updated with real data in refreshActivityChart()
   actChart = echarts.init(document.getElementById('chart-activity'));
   actChart.setOption({backgroundColor:'transparent',grid:{top:10,bottom:25,left:50,right:10},
-    xAxis:{type:'category',data:['Strategies','Decisions','Swaps','NFTs','Volume (ETH)'],axisLabel:{color:'#6b7280',fontSize:10},axisLine:{lineStyle:{color:'rgba(255,255,255,.08)'}}},
+    xAxis:{type:'category',data:['策略数','决策数','Swap 数','NFT 数','交易量(ETH)'],axisLabel:{color:'#6b7280',fontSize:10},axisLine:{lineStyle:{color:'rgba(255,255,255,.08)'}}},
     yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:10},splitLine:{lineStyle:{color:'rgba(255,255,255,.04)'}}},
     series:[{type:'bar',data:[0,0,0,0,0],itemStyle:{color:function(p){
       var colors=['#00f0ff','#a855f7','#22c55e','#eab308','#00f0ff'];
@@ -553,7 +553,7 @@ function initCharts() {
     yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:9,formatter:v=>v.toFixed(1)+'%'},splitLine:{show:false}},
     series:[{type:'line',data:fY,smooth:true,showSymbol:false,lineStyle:{color:'#00f0ff',width:2},
       areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(0,240,255,.25)'},{offset:1,color:'rgba(0,240,255,0)'}]}}}],
-    title:{text:'Fee Model (Sigmoid)',left:'center',bottom:0,textStyle:{color:'#6b7280',fontSize:9,fontWeight:'normal'}}
+    title:{text:'费率模型 (Sigmoid)',left:'center',bottom:0,textStyle:{color:'#6b7280',fontSize:9,fontWeight:'normal'}}
   });
 
   // Range chart
@@ -572,14 +572,14 @@ function initCharts() {
   // Radar - will be updated with real data in refreshRadarChart()
   radarChart = echarts.init(document.getElementById('chart-radar'));
   radarChart.setOption({backgroundColor:'transparent',
-    radar:{indicator:[{name:'Strategies',max:10},{name:'Swaps',max:50},{name:'Decisions',max:50},{name:'Volume (ETH)',max:10},{name:'NFTs',max:10}],
+    radar:{indicator:[{name:'策略数',max:10},{name:'Swap 数',max:50},{name:'决策数',max:50},{name:'交易量(ETH)',max:10},{name:'NFT 数',max:10}],
       shape:'polygon',axisName:{color:'#9ca3af',fontSize:11},
       splitArea:{areaStyle:{color:['rgba(0,240,255,.02)','rgba(0,240,255,.04)']}},
       splitLine:{lineStyle:{color:'rgba(0,240,255,.12)'}},axisLine:{lineStyle:{color:'rgba(0,240,255,.15)'}}},
     series:[{type:'radar',data:[
-      {value:[0,0,0,0,0],name:'Protocol Metrics',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}
+      {value:[0,0,0,0,0],name:'协议指标',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}
     ]}],tooltip:{trigger:'item'},
-    title:{text:'On-Chain Metrics Radar (Live)',left:'center',top:0,textStyle:{color:'#6b7280',fontSize:11,fontWeight:'normal'}}
+    title:{text:'链上指标雷达图（实时）',left:'center',top:0,textStyle:{color:'#6b7280',fontSize:11,fontWeight:'normal'}}
   });
 
   window.addEventListener('resize',()=>{[actChart,feeChart,rngChart,radarChart].forEach(c=>c.resize())});
@@ -609,13 +609,13 @@ function refreshRadarChart(strategies, decisions, swaps, nfts, volumeEth) {
   // Adjust radar max dynamically
   radarChart.setOption({
     radar:{indicator:[
-      {name:'Strategies',max:Math.max(s*2,10)},
-      {name:'Swaps',max:Math.max(sw*2,50)},
-      {name:'Decisions',max:Math.max(d*2,50)},
-      {name:'Volume (ETH)',max:Math.max(vol*2,10)},
-      {name:'NFTs',max:Math.max(n*2,10)}
+      {name:'策略数',max:Math.max(s*2,10)},
+      {name:'Swap 数',max:Math.max(sw*2,50)},
+      {name:'决策数',max:Math.max(d*2,50)},
+      {name:'交易量(ETH)',max:Math.max(vol*2,10)},
+      {name:'NFT 数',max:Math.max(n*2,10)}
     ]},
-    series:[{data:[{value:[s,sw,d,vol,n],name:'Protocol Metrics',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}]}]
+    series:[{data:[{value:[s,sw,d,vol,n],name:'协议指标',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}]}]
   });
 }
 
@@ -633,13 +633,13 @@ async function loadRecentTransactions() {
     if (strategyFilter) {
       try {
         const sEvents = await rpcAssembler.queryFilter(strategyFilter, fromBlock, currentBlock);
-        events = events.concat(sEvents.map(e => ({type:'Strategy Creation', hash:e.transactionHash, block:e.blockNumber, color:'bg-cyan-400'})));
+        events = events.concat(sEvents.map(e => ({type:'策略创建', hash:e.transactionHash, block:e.blockNumber, color:'bg-cyan-400'})));
       } catch(e) { console.warn('Could not query StrategyCreated events:', e); }
     }
     if (decisionFilter) {
       try {
         const dEvents = await rpcAssembler.queryFilter(decisionFilter, fromBlock, currentBlock);
-        events = events.concat(dEvents.map(e => ({type:'Decision Logged', hash:e.transactionHash, block:e.blockNumber, color:'bg-purple-400'})));
+        events = events.concat(dEvents.map(e => ({type:'决策记录', hash:e.transactionHash, block:e.blockNumber, color:'bg-purple-400'})));
       } catch(e) { console.warn('Could not query DecisionLogged events:', e); }
     }
 
@@ -648,7 +648,7 @@ async function loadRecentTransactions() {
       const nftTransferFilter = rpcNft.filters.Transfer ? rpcNft.filters.Transfer(ethers.ZeroAddress) : null;
       if (nftTransferFilter) {
         const nEvents = await rpcNft.queryFilter(nftTransferFilter, fromBlock, currentBlock);
-        events = events.concat(nEvents.map(e => ({type:'NFT Mint', hash:e.transactionHash, block:e.blockNumber, color:'bg-yellow-400'})));
+        events = events.concat(nEvents.map(e => ({type:'NFT 铸造', hash:e.transactionHash, block:e.blockNumber, color:'bg-yellow-400'})));
       }
     } catch(e) { console.warn('Could not query NFT events:', e); }
 
@@ -670,11 +670,11 @@ async function loadRecentTransactions() {
       });
       el.innerHTML = html;
     } else {
-      el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">No recent transactions found via events. <a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">View on Explorer</a></div>';
+      el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">未找到最近交易。<a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看</a></div>';
     }
   } catch(e) {
     console.warn('Could not load recent transactions:', e);
-    el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">Could not query events. <a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">View transactions on Explorer</a></div>';
+    el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">无法查询事件。<a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看交易</a></div>';
   }
 }
 
