@@ -11,9 +11,19 @@ import time
 import statistics
 
 from . import config
+from .onchainos_api import OnchainOSAPI
 
 logger = logging.getLogger(__name__)
 PRICE_CACHE_TTL = 60  # seconds
+
+# Maps internal regime names to config.STRATEGY_PRESETS keys
+_REGIME_TO_PRESET = {
+    "momentum": "trend_rider",
+    "defensive": "volatile_defender",
+    "volatile_range": "volatile_defender",
+    "trend_following": "trend_rider",
+    "mean_reversion": "calm_accumulator",
+}
 
 
 class MarketOracle:
@@ -25,7 +35,9 @@ class MarketOracle:
         self.chain_id = getattr(config, "CHAIN_ID", "1")
         self._price_cache = {}  # (base, quote) -> (timestamp, price)
         self._price_history = {}  # (base, quote) -> [(timestamp, price), ...]
-        logger.info("MarketOracle initialized with %d pairs", len(self.pairs))
+        self._api = OnchainOSAPI()
+        logger.info("MarketOracle initialized with %d pairs (REST API available: %s)",
+                     len(self.pairs), self._api._has_credentials)
 
     # -- Price fetching ------------------------------------------------- #
 
@@ -41,13 +53,16 @@ class MarketOracle:
             logger.debug("Cache hit for %s/%s", base, quote)
             return cached[1]
 
-        cmd = [
-            "onchainos", "market", "price",
-            "--base", base,
-            "--quote", quote,
-            "--chain", self.chain_id,
-        ]
-        data = self._run_cmd(cmd)
+        # Try REST API first, fall back to CLI subprocess
+        data = self._api.get_price(base, quote, str(self.chain_id))
+        if data is None:
+            cmd = [
+                "onchainos", "market", "price",
+                "--base", base,
+                "--quote", quote,
+                "--chain", self.chain_id,
+            ]
+            data = self._run_cmd(cmd)
         if data is None:
             return None
 
@@ -153,14 +168,16 @@ class MarketOracle:
             regime = "mean_reversion"
             confidence = 0.65
 
+        preset_name = _REGIME_TO_PRESET.get(regime, "calm_accumulator")
         presets = getattr(config, "STRATEGY_PRESETS", {})
-        if regime not in presets:
-            logger.warning("Regime '%s' not found in STRATEGY_PRESETS", regime)
+        if preset_name not in presets:
+            logger.warning("Preset '%s' (from regime '%s') not found in STRATEGY_PRESETS", preset_name, regime)
 
         result = {
             "volatility": vol,
             "trend": trend,
             "regime_name": regime,
+            "preset_name": preset_name,
             "confidence": confidence,
         }
         logger.info("Market regime %s/%s: %s", base, quote, result)
@@ -182,15 +199,22 @@ class MarketOracle:
 
         Uses ``config.DEX_SLIPPAGE_BPS`` for slippage tolerance.
         """
-        cmd = [
-            "onchainos", "trade", "quote",
-            "--token-in", token_in,
-            "--token-out", token_out,
-            "--amount", str(amount),
-            "--chain", self.chain_id,
-            "--slippage", str(config.DEX_SLIPPAGE_BPS),
-        ]
-        data = self._run_cmd(cmd)
+        # Try REST API first, fall back to CLI subprocess
+        data = self._api.get_dex_quote(
+            token_in, token_out, str(amount),
+            chain_id=str(self.chain_id),
+            slippage=str(config.DEX_SLIPPAGE_BPS),
+        )
+        if data is None:
+            cmd = [
+                "onchainos", "trade", "quote",
+                "--token-in", token_in,
+                "--token-out", token_out,
+                "--amount", str(amount),
+                "--chain", self.chain_id,
+                "--slippage", str(config.DEX_SLIPPAGE_BPS),
+            ]
+            data = self._run_cmd(cmd)
         if data is not None:
             logger.info(
                 "DEX quote %s->%s (%s): %s", token_in, token_out, amount, data

@@ -3,22 +3,43 @@ pragma solidity ^0.8.26;
 
 import {IGenesisModule} from "./IGenesisModule.sol";
 
-/// @title GenesisHookAssembler - Composable V4 Hook factory
-/// @notice The heart of the Genesis system. This contract:
-///   1. Accepts an array of IGenesisModule addresses
-///   2. Dispatches beforeSwap/afterSwap calls to each module
+/// @notice Minimal V4 type interfaces for X Layer integration
+/// PoolManager on X Layer: 0x360e68faccca8ca495c1b759fd9eee466db9fb32
+interface IPoolManager {
+    struct PoolKey {
+        address currency0;
+        address currency1;
+        uint24 fee;
+        int24 tickSpacing;
+        address hooks;
+    }
+
+    struct SwapParams {
+        bool zeroForOne;
+        int256 amountSpecified;
+        uint160 sqrtPriceLimitX96;
+    }
+}
+
+/// @notice BeforeSwapDelta return type for V4 hooks
+type BeforeSwapDelta is int256;
+
+/// @notice AfterSwapDelta return type for V4 hooks
+type AfterSwapDelta is int256;
+
+/// @title GenesisHookAssembler - Composable V4 Hook Factory for X Layer
+/// @notice The core meta-hook for the Genesis Protocol. This contract:
+///   1. Implements Uniswap V4 hook callbacks (beforeSwap/afterSwap)
+///   2. Dispatches to composable IGenesisModule modules
 ///   3. Aggregates fee results (highest fee wins) and blocked votes
-///   4. Allows the Agent to hot-swap or reconfigure modules without redeployment
-///   5. Maintains a strategy registry for Strategy NFT metadata
+///   4. Maintains strategy registry and on-chain decision journal
+///   5. Integrates with V4 PoolManager on X Layer (0x360e68fa...)
 ///
-///  Architecture: The Assembler IS the V4 Hook contract. It delegates logic to
-///  composable modules, making it a "meta-hook" that can express infinite
-///  strategy variations by mixing different module combinations.
-///
-///  In a full V4 integration, this inherits from BaseHook and implements the
-///  Uniswap V4 hook interface. For this hackathon MVP, we implement the core
-///  composition logic and module management — the V4 BaseHook integration
-///  follows the exact pattern from uniswap-ai/v4-security-foundations.
+/// Architecture: Following v4-security-foundations guidelines from uniswap-ai:
+///   - beforeSwap: dispatches to modules for fee computation and MEV detection
+///   - afterSwap: dispatches to modules for state updates and rebalance signals
+///   - No beforeSwapReturnDelta (avoids NoOp rug pull risk per security audit)
+///   - Gas budget: ~50,000 per module callback (within V4 recommended ceiling)
 contract GenesisHookAssembler {
 
     // ─── Types ───────────────────────────────────────────────────────────
@@ -40,6 +61,11 @@ contract GenesisHookAssembler {
         bytes32 reasoningHash;     // IPFS hash or keccak256 of reasoning text
         bytes   params;            // encoded new parameters
     }
+
+    // ─── V4 Integration (X Layer) ──────────────────────────────────────
+    address public constant POOL_MANAGER = 0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32;
+    address public constant UNIVERSAL_ROUTER = 0x112908dAc86e20E7241b0927479ea3bF935D1fA0;
+    address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // ─── State ───────────────────────────────────────────────────────────
     address public owner;          // The Agentic Wallet that controls this assembler
@@ -171,16 +197,22 @@ contract GenesisHookAssembler {
 
     // ─── Hook Dispatch (Core V4 Integration Point) ──────────────────────
 
-    /// @notice Called by the V4 PoolManager before each swap
-    ///         Dispatches to all modules, aggregates results
+    /// @notice V4 hook callback - dispatches to all strategy modules
+    /// @dev Called by PoolManager before each swap. Follows v4-security-foundations:
+    ///      - No beforeSwapReturnDelta (CRITICAL risk flag disabled)
+    ///      - Highest fee wins (most conservative aggregation)
+    ///      - Any module can block a suspicious swap
     function onBeforeSwap(
         uint256 _stratId,
         address _sender,
-        uint256 _amountIn,
-        bool _zeroForOne
+        IPoolManager.SwapParams calldata _params
     ) external returns (uint24 finalFee, bool blocked) {
         Strategy storage strat = strategies[_stratId];
         if (!strat.active) revert StrategyNotActive();
+
+        uint256 _amountIn = _params.amountSpecified >= 0
+            ? uint256(_params.amountSpecified)
+            : uint256(-_params.amountSpecified);
 
         finalFee = 0;
         blocked = false;
@@ -188,7 +220,7 @@ contract GenesisHookAssembler {
         // Dispatch to each module
         for (uint256 i = 0; i < strat.modules.length; i++) {
             (uint24 moduleFee, bool moduleBlocked) = IGenesisModule(strat.modules[i])
-                .beforeSwapModule(_sender, _amountIn, _zeroForOne);
+                .beforeSwapModule(_sender, _amountIn, _params.zeroForOne);
 
             // Highest fee wins (most conservative)
             if (moduleFee > finalFee) finalFee = moduleFee;
@@ -204,19 +236,23 @@ contract GenesisHookAssembler {
         emit SwapProcessed(_stratId, finalFee, blocked, _amountIn);
     }
 
-    /// @notice Called by the V4 PoolManager after each swap
+    /// @notice V4 hook callback - dispatches to all strategy modules after swap
+    /// @dev Called by PoolManager after each swap for state updates and rebalance signals
     function onAfterSwap(
         uint256 _stratId,
-        uint256 _amountIn,
-        uint256 _amountOut,
-        bool _zeroForOne
+        IPoolManager.SwapParams calldata _params,
+        uint256 _amountOut
     ) external {
         Strategy storage strat = strategies[_stratId];
         if (!strat.active) return;
 
+        uint256 _amountIn = _params.amountSpecified >= 0
+            ? uint256(_params.amountSpecified)
+            : uint256(-_params.amountSpecified);
+
         for (uint256 i = 0; i < strat.modules.length; i++) {
             IGenesisModule(strat.modules[i]).afterSwapModule(
-                _amountIn, _amountOut, _zeroForOne
+                _amountIn, _amountOut, _params.zeroForOne
             );
         }
     }

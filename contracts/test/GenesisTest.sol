@@ -4,6 +4,7 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {IGenesisModule} from "../src/IGenesisModule.sol";
 import {GenesisHookAssembler} from "../src/GenesisHookAssembler.sol";
+import {IPoolManager} from "../src/GenesisHookAssembler.sol";
 import {StrategyNFT} from "../src/StrategyNFT.sol";
 import {DynamicFeeModule} from "../src/modules/DynamicFeeModule.sol";
 import {MEVProtectionModule} from "../src/modules/MEVProtectionModule.sol";
@@ -78,6 +79,18 @@ contract GenesisTest is Test {
         assembler.registerModule(address(rebalModule));
 
         vm.stopPrank();
+    }
+
+    // ================================================================
+    // Helper: construct V4 SwapParams
+    // ================================================================
+
+    function _swapParams(bool zeroForOne, int256 amount) internal pure returns (IPoolManager.SwapParams memory) {
+        return IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: amount,
+            sqrtPriceLimitX96: 0
+        });
     }
 
     // ================================================================
@@ -171,7 +184,7 @@ contract GenesisTest is Test {
         vm.prank(address(assembler));
         feeModule.updateVolatility(100); // below lowThreshold
 
-        (uint24 fee, bool blocked) = assembler.onBeforeSwap(sid, alice, 1 ether, true);
+        (uint24 fee, bool blocked) = assembler.onBeforeSwap(sid, alice, _swapParams(true, 1 ether));
         assertEq(fee, 1000); // minFee wins (rebalance returns 0)
         assertFalse(blocked);
     }
@@ -185,11 +198,11 @@ contract GenesisTest is Test {
         uint256 sid = assembler.createStrategy(mods);
 
         // First two swaps are fine (count <= threshold)
-        assembler.onBeforeSwap(sid, alice, 1 ether, true);
-        assembler.onBeforeSwap(sid, bob, 1 ether, true);
+        assembler.onBeforeSwap(sid, alice, _swapParams(true, 1 ether));
+        assembler.onBeforeSwap(sid, bob, _swapParams(true, 1 ether));
 
         // Third same-direction swap exceeds swapCountThreshold of 2
-        (, bool blocked) = assembler.onBeforeSwap(sid, alice, 1 ether, true);
+        (, bool blocked) = assembler.onBeforeSwap(sid, alice, _swapParams(true, 1 ether));
         assertTrue(blocked);
     }
 
@@ -200,8 +213,8 @@ contract GenesisTest is Test {
         vm.prank(owner);
         uint256 sid = assembler.createStrategy(mods);
 
-        assembler.onBeforeSwap(sid, alice, 5 ether, true);
-        assembler.onBeforeSwap(sid, alice, 3 ether, false);
+        assembler.onBeforeSwap(sid, alice, _swapParams(true, 5 ether));
+        assembler.onBeforeSwap(sid, alice, _swapParams(false, 3 ether));
 
         GenesisHookAssembler.Strategy memory s = assembler.getStrategy(sid);
         assertEq(s.totalSwaps, 2);
@@ -220,7 +233,7 @@ contract GenesisTest is Test {
         assembler.deactivateStrategy(sid);
 
         vm.expectRevert(GenesisHookAssembler.StrategyNotActive.selector);
-        assembler.onBeforeSwap(sid, alice, 1 ether, true);
+        assembler.onBeforeSwap(sid, alice, _swapParams(true, 1 ether));
     }
 
     // ================================================================

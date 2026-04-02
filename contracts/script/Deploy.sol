@@ -10,6 +10,10 @@ import {StrategyNFT} from "../src/StrategyNFT.sol";
 
 contract Deploy is Script {
 
+    // Uniswap V4 on X Layer
+    address constant POOL_MANAGER = 0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32;
+    address constant UNIVERSAL_ROUTER = 0x112908dAc86e20E7241b0927479ea3bF935D1fA0;
+
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -70,5 +74,8 @@ contract Deploy is Script {
         vm.stopBroadcast();
 
         console.log("--- Deployment Complete ---");
+        console.log("--- Uniswap V4 Integration ---");
+        console.log("PoolManager:", POOL_MANAGER);
+        console.log("UniversalRouter:", UNIVERSAL_ROUTER);
     }
 }

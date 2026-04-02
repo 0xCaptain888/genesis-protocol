@@ -11,7 +11,7 @@ import json
 import logging
 import time
 
-from config import (
+from .config import (
     DRY_RUN, LOG_LEVEL, X402_ENABLED, X402_PRICING,
     CONTRACTS, CHAIN_ID, WALLET_ROLES,
 )

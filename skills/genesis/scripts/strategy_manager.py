@@ -40,10 +40,17 @@ class StrategyManager:
     def create_strategy(self, market_regime, market_data):
         """Orchestrate full strategy creation via HookAssembler. Returns strategy record."""
         preset_name = self._select_preset(market_regime)
-        preset = config.STRATEGY_PRESETS[preset_name]
-        modules = preset["modules"]
-        overrides = preset.get("overrides", {})
-        strategy_id = self.assembler.create_strategy(modules, overrides)
+        regime_dict = {
+            "regime_name": market_regime if isinstance(market_regime, str) else market_regime.get("regime_name", ""),
+            "volatility_bps": market_data.get("volatility_bps", 0) if isinstance(market_data, dict) else 0,
+            "trend": market_data.get("trend", "sideways") if isinstance(market_data, dict) else "sideways",
+        }
+        deploy_result = self.assembler.compose_and_deploy(regime_dict, market_data if isinstance(market_data, dict) else {})
+        if deploy_result.get("error"):
+            logger.error("compose_and_deploy failed: %s", deploy_result)
+            return {"error": deploy_result["error"]}
+        strategy_id = deploy_result.get("strategy_id", "")
+        modules = list(deploy_result.get("modules", {}).keys())
         record = {
             "id": strategy_id, "preset_name": preset_name, "modules": modules,
             "created_at": int(time.time()), "last_evaluated": 0,
@@ -312,14 +319,29 @@ class StrategyManager:
             return {"error": str(exc)}
 
     def _select_preset(self, market_regime):
-        """Map a market regime string to the best strategy preset name."""
+        """Map a market regime (string or dict) to the best strategy preset name."""
+        # Handle dict input from MarketOracle.get_market_regime()
+        if isinstance(market_regime, dict):
+            # Prefer the preset_name key if present (set by _REGIME_TO_PRESET mapping)
+            if market_regime.get("preset_name"):
+                return market_regime["preset_name"]
+            regime_str = market_regime.get("regime_name", "")
+        else:
+            regime_str = market_regime
+
         regime_map = {
             "low_vol": "calm_accumulator", "sideways": "calm_accumulator",
             "high_vol": "volatile_defender", "volatile": "volatile_defender",
             "trending": "trend_rider", "bull": "trend_rider",
             "bear": "volatile_defender",
+            # Regime names returned by MarketOracle.get_market_regime()
+            "momentum": "trend_rider",
+            "defensive": "volatile_defender",
+            "volatile_range": "volatile_defender",
+            "trend_following": "trend_rider",
+            "mean_reversion": "calm_accumulator",
         }
-        return regime_map.get(market_regime, "calm_accumulator")
+        return regime_map.get(regime_str, "calm_accumulator")
 
     def _load_local_registry(self):
         """Load strategy records from local JSON file."""
