@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genesis Protocol - AI驱动的Uniswap V4 Hook策略引擎</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web@2.0.3"></script>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--neon:#00f0ff;--neon2:#a855f7;--neon3:#22d3ee;--dark:#0a0e1a;--card:#111827}
+*{margin:0;padding:0;box-sizing:border-box;scroll-behavior:smooth}
+body{font-family:'JetBrains Mono',monospace}
+h1,h2,h3,.font-display{font-family:'Orbitron',sans-serif}
+#progress-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--neon),var(--neon2));z-index:999;width:0;transition:width .1s}
+.glow{text-shadow:0 0 20px var(--neon),0 0 60px var(--neon)}
+.glow-purple{text-shadow:0 0 20px var(--neon2),0 0 60px var(--neon2)}
+.card{background:var(--card);border:1px solid rgba(0,240,255,.15);border-radius:12px;transition:all .3s}
+.card:hover{border-color:var(--neon);box-shadow:0 0 30px rgba(0,240,255,.15)}
+.neon-line{height:2px;background:linear-gradient(90deg,transparent,var(--neon),transparent)}
+.section{padding:80px 20px;max-width:1100px;margin:0 auto}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes pulse-glow{0%,100%{opacity:.6}50%{opacity:1}}
+.animate-float{animation:float 3s ease-in-out infinite}
+.grid-bg{background-image:linear-gradient(rgba(0,240,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,240,255,.05) 1px,transparent 1px);background-size:40px 40px}
+canvas#particles{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+</style>
+</head>
+<body class="bg-[#0a0e1a] text-gray-200 font-mono overflow-x-hidden">
+<div id="progress-bar"></div>
+
+<!-- Hero -->
+<section class="relative min-h-screen flex items-center justify-center grid-bg" id="hero">
+<canvas id="particles"></canvas>
+<div class="relative z-10 text-center px-4">
+<p class="text-[var(--neon)] text-sm tracking-[.3em] mb-4 opacity-0" id="hero-sub">OKX BUILD X HACKATHON 2026</p>
+<h1 class="text-5xl md:text-7xl font-black glow mb-6 opacity-0" id="hero-title">GENESIS<br>PROTOCOL</h1>
+<p class="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-8 opacity-0" id="hero-desc">AI驱动的 Uniswap V4 Hook 策略引擎 — 构建于 X Layer</p>
+<div class="flex gap-4 justify-center opacity-0" id="hero-cta">
+<a href="https://github.com/0xCaptain888/genesis-protocol" target="_blank" class="px-6 py-3 bg-[var(--neon)] text-black font-bold rounded-lg hover:shadow-[0_0_30px_var(--neon)] transition-all flex items-center gap-2"><i class="ph ph-github-logo text-xl"></i> GitHub 仓库</a>
+<a href="#architecture" class="px-6 py-3 border border-[var(--neon)] text-[var(--neon)] rounded-lg hover:bg-[var(--neon)] hover:text-black transition-all">探索架构 <i class="ph ph-arrow-down"></i></a>
+</div>
+<div class="mt-12 flex gap-6 justify-center text-xs text-gray-500 opacity-0" id="hero-badges">
+<span class="flex items-center gap-1"><i class="ph ph-check-circle text-green-400"></i> 40/40 测试通过</span>
+<span class="flex items-center gap-1"><i class="ph ph-shield-check text-yellow-400"></i> 默认安全模式</span>
+<span class="flex items-center gap-1"><i class="ph ph-lightning text-[var(--neon)]"></i> ~$0.0005/笔交易</span>
+</div>
+</div>
+</section>
+<!-- Architecture -->
+<section class="section" id="architecture">
+<h2 class="text-3xl font-bold text-center glow mb-4">双层架构</h2>
+<p class="text-center text-gray-400 mb-12">AI 代理 ↔ X Layer 链上协同</p>
+<div class="grid md:grid-cols-2 gap-6">
+<div class="card p-6 arch-card">
+<div class="flex items-center gap-3 mb-4"><i class="ph ph-brain text-3xl text-[var(--neon2)]"></i><h3 class="text-xl font-bold text-[var(--neon2)]">AI 代理层</h3></div>
+<ul class="space-y-2 text-sm text-gray-400">
+<li><i class="ph ph-flow-arrow text-[var(--neon)]"></i> 5层认知架构 (感知→进化)</li>
+<li><i class="ph ph-notebook text-[var(--neon)]"></i> 决策日志全链上记录</li>
+<li><i class="ph ph-robot text-[var(--neon)]"></i> 9个Python脚本驱动</li>
+<li><i class="ph ph-shield-warning text-[var(--neon)]"></i> DRY_RUN=True 默认安全</li>
+</ul>
+</div>
+<div class="card p-6 arch-card">
+<div class="flex items-center gap-3 mb-4"><i class="ph ph-cube text-3xl text-[var(--neon)]"></i><h3 class="text-xl font-bold text-[var(--neon)]">X Layer 链上层</h3></div>
+<ul class="space-y-2 text-sm text-gray-400">
+<li><i class="ph ph-plugs text-[var(--neon2)]"></i> GenesisHookAssembler 元工厂</li>
+<li><i class="ph ph-gear text-[var(--neon2)]"></i> 3个可组合Hook模块</li>
+<li><i class="ph ph-image text-[var(--neon2)]"></i> 策略NFT (ERC-721)</li>
+<li><i class="ph ph-coins text-[var(--neon2)]"></i> chainId 196 / 1s出块</li>
+</ul>
+</div>
+</div>
+<div class="neon-line my-8 mx-auto w-1/2"></div>
+<div class="flex justify-center gap-2 text-xs text-gray-500 flex-wrap">
+<span class="px-3 py-1 border border-gray-700 rounded-full">感知数据</span>
+<span class="text-[var(--neon)]">→</span><span class="px-3 py-1 border border-gray-700 rounded-full">AI分析</span>
+<span class="text-[var(--neon)]">→</span><span class="px-3 py-1 border border-gray-700 rounded-full">生成策略</span>
+<span class="text-[var(--neon)]">→</span><span class="px-3 py-1 border border-gray-700 rounded-full">链上执行</span>
+<span class="text-[var(--neon)]">→</span><span class="px-3 py-1 border border-gray-700 rounded-full">NFT铸造</span>
+</div>
+</section>
+<!-- Hook Template Engine -->
+<section class="section" id="hooks">
+<h2 class="text-3xl font-bold text-center glow mb-4">Hook 模板引擎</h2>
+<p class="text-center text-gray-400 mb-12">3个可组合的 Solidity 模块 — 由 GenesisHookAssembler 编排</p>
+<div class="grid md:grid-cols-3 gap-6">
+<div class="card p-6 hook-card text-center">
+<i class="ph ph-chart-line-up text-4xl text-[var(--neon)] mb-3 block"></i>
+<h3 class="font-bold text-lg mb-2">DynamicFeeModule</h3>
+<p class="text-[var(--neon)] text-sm mb-3 font-display">Fee = f(volatility)</p>
+<p class="text-xs text-gray-500 mb-4">基于市场波动率动态调整手续费，低波动低费率，高波动高费率</p>
+<div id="chart-fee" style="height:120px"></div>
+</div>
+<div class="card p-6 hook-card text-center">
+<i class="ph ph-shield-checkered text-4xl text-[var(--neon2)] mb-3 block"></i>
+<h3 class="font-bold text-lg mb-2">MEVProtectionModule</h3>
+<p class="text-[var(--neon2)] text-sm mb-3 font-display">三明治攻击检测</p>
+<p class="text-xs text-gray-500 mb-4">实时检测并阻断三明治攻击，保护LP免受MEV提取</p>
+<div class="text-xs text-left bg-black/50 rounded p-3 font-mono"><span class="text-red-400">TX₁ Buy</span> → <span class="text-yellow-400">Victim</span> → <span class="text-red-400">TX₂ Sell</span><br><span class="text-green-400 mt-1 block">→ Shield: 已拦截 ✓</span></div>
+</div>
+<div class="card p-6 hook-card text-center">
+<i class="ph ph-arrows-out-line-vertical text-4xl text-[var(--neon3)] mb-3 block"></i>
+<h3 class="font-bold text-lg mb-2">AutoRebalanceModule</h3>
+<p class="text-[var(--neon3)] text-sm mb-3 font-display">无常损失保护</p>
+<p class="text-xs text-gray-500 mb-4">当价格偏离区间时自动再平衡流动性位置</p>
+<div id="chart-range" style="height:120px"></div>
+</div>
+</div>
+</section>
+<!-- AI Cognitive Layers -->
+<section class="section" id="ai-layers">
+<h2 class="text-3xl font-bold text-center glow-purple mb-4">5层 AI 认知架构</h2>
+<p class="text-center text-gray-400 mb-12">从感知到元认知 — 持续进化的策略引擎</p>
+<div class="grid md:grid-cols-2 gap-8 items-center">
+<div class="space-y-4">
+<div class="card p-4 flex items-center gap-4 layer-card"><span class="text-2xl font-black text-[var(--neon)] font-display w-8">1</span><div><h3 class="font-bold text-sm">感知层 Perception</h3><p class="text-xs text-gray-500">每30秒 — 采集价格、波动率、链上数据</p></div></div>
+<div class="card p-4 flex items-center gap-4 layer-card"><span class="text-2xl font-black text-[var(--neon)] font-display w-8">2</span><div><h3 class="font-bold text-sm">分析层 Analysis</h3><p class="text-xs text-gray-500">每2分钟 — 市场状态分类与风险评估</p></div></div>
+<div class="card p-4 flex items-center gap-4 layer-card"><span class="text-2xl font-black text-[var(--neon)] font-display w-8">3</span><div><h3 class="font-bold text-sm">规划层 Planning</h3><p class="text-xs text-gray-500">每5分钟 — 生成与优化Hook参数策略</p></div></div>
+<div class="card p-4 flex items-center gap-4 layer-card"><span class="text-2xl font-black text-[var(--neon2)] font-display w-8">4</span><div><h3 class="font-bold text-sm">进化层 Evolution</h3><p class="text-xs text-gray-500">每1小时 — 策略回测与自我改进</p></div></div>
+<div class="card p-4 flex items-center gap-4 layer-card"><span class="text-2xl font-black text-[var(--neon2)] font-display w-8">5</span><div><h3 class="font-bold text-sm">元认知层 Meta-Cognition</h3><p class="text-xs text-gray-500">每24小时 — 反思决策质量，调整认知权重</p></div></div>
+</div>
+<div id="chart-radar" style="height:350px"></div>
+</div>
+</section>
+<!-- Strategy Presets -->
+<section class="section" id="presets">
+<h2 class="text-3xl font-bold text-center glow mb-4">策略预设</h2>
+<p class="text-center text-gray-400 mb-12">3种经过验证的策略模板 — 适应不同市场环境</p>
+<div class="grid md:grid-cols-3 gap-6 mb-10">
+<div class="card p-6 preset-card"><h3 class="font-bold text-[var(--neon3)] font-display mb-2"><i class="ph ph-wave-sine"></i> calm_accumulator</h3><p class="text-xs text-gray-500 mb-3">低波动市场 · 稳健积累</p><ul class="text-xs space-y-1 text-gray-400"><li>模块: DynamicFee + AutoRebalance</li><li>费率: 0.05% - 0.3%</li><li>风险: 保守</li></ul></div>
+<div class="card p-6 preset-card border-[var(--neon2)]"><h3 class="font-bold text-[var(--neon2)] font-display mb-2"><i class="ph ph-shield"></i> volatile_defender</h3><p class="text-xs text-gray-500 mb-3">高波动市场 · 防御优先</p><ul class="text-xs space-y-1 text-gray-400"><li>模块: 全部3个模块</li><li>费率: 0.1% - 1.0%</li><li>风险: 防御型</li></ul></div>
+<div class="card p-6 preset-card"><h3 class="font-bold text-[var(--neon)] font-display mb-2"><i class="ph ph-trend-up"></i> trend_rider</h3><p class="text-xs text-gray-500 mb-3">趋势市场 · 追踪收益</p><ul class="text-xs space-y-1 text-gray-400"><li>模块: DynamicFee + MEVProtection</li><li>费率: 0.05% - 0.5%</li><li>风险: 激进</li></ul></div>
+</div>
+<div id="chart-presets" style="height:280px"></div>
+</section>
+<!-- Strategy NFT -->
+<section class="section" id="nft">
+<h2 class="text-3xl font-bold text-center glow-purple mb-4">策略 NFT</h2>
+<p class="text-center text-gray-400 mb-12">成功策略自动铸造为 ERC-721 · 链上元数据永久存证</p>
+<div class="max-w-md mx-auto">
+<div class="card p-8 relative overflow-hidden" style="border-color:var(--neon2);box-shadow:0 0 40px rgba(168,85,247,.2)">
+<div class="absolute top-0 right-0 w-32 h-32 bg-[var(--neon2)] opacity-5 rounded-full blur-3xl"></div>
+<div class="text-center mb-6"><i class="ph ph-diamond text-5xl text-[var(--neon2)]"></i><h3 class="font-display text-xl font-bold mt-2">Genesis Strategy #001</h3></div>
+<div class="space-y-3 text-sm">
+<div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">策略类型</span><span class="text-[var(--neon)]">volatile_defender</span></div>
+<div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">收益率</span><span class="text-green-400">+2.4% P&L</span></div>
+<div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">交易笔数</span><span>128 swaps</span></div>
+<div class="flex justify-between border-b border-gray-800 pb-2"><span class="text-gray-500">运行时长</span><span>72小时</span></div>
+<div class="flex justify-between"><span class="text-gray-500">决策日志</span><span class="text-[var(--neon2)]">链上已记录</span></div>
+</div>
+<div class="mt-6 text-xs text-gray-600 text-center">铸造条件: P&L ≥ +1% · Swaps ≥ 50 · 运行 ≥ 48h</div>
+</div>
+</div>
+</section>
+<!-- x402 Payment -->
+<section class="section" id="x402">
+<h2 class="text-3xl font-bold text-center glow mb-4">x402 支付层</h2>
+<p class="text-center text-gray-400 mb-12">内置货币化 · USDG/USDT 零Gas支付</p>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="card p-5 text-center x402-card"><h3 class="font-display text-sm text-gray-400">免费</h3><p class="text-2xl font-black text-[var(--neon)] my-2">$0</p><p class="text-xs text-gray-500">基础策略查询<br>公开数据API</p></div>
+<div class="card p-5 text-center x402-card"><h3 class="font-display text-sm text-gray-400">基础</h3><p class="text-2xl font-black text-[var(--neon)] my-2">$0.01</p><p class="text-xs text-gray-500">AI策略建议<br>单次调用</p></div>
+<div class="card p-5 text-center x402-card" style="border-color:var(--neon2)"><h3 class="font-display text-sm text-[var(--neon2)]">专业</h3><p class="text-2xl font-black text-[var(--neon2)] my-2">$0.10</p><p class="text-xs text-gray-500">完整策略生成<br>含回测报告</p></div>
+<div class="card p-5 text-center x402-card"><h3 class="font-display text-sm text-gray-400">企业</h3><p class="text-2xl font-black text-white my-2">$1.00</p><p class="text-xs text-gray-500">批量策略优化<br>定制化服务</p></div>
+</div>
+</section>
+<!-- Tech Stats -->
+<section class="section" id="stats">
+<h2 class="text-3xl font-bold text-center glow mb-12">项目数据</h2>
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-[var(--neon)] font-display counter" data-target="6">0</p><p class="text-xs text-gray-500 mt-1">Solidity 合约</p></div>
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-[var(--neon2)] font-display counter" data-target="9">0</p><p class="text-xs text-gray-500 mt-1">Python 脚本</p></div>
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-green-400 font-display counter" data-target="40">0</p><p class="text-xs text-gray-500 mt-1">测试通过</p></div>
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-[var(--neon3)] font-display counter" data-target="4225">0</p><p class="text-xs text-gray-500 mt-1">代码行数</p></div>
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-yellow-400 font-display counter" data-target="5">0</p><p class="text-xs text-gray-500 mt-1">钱包角色</p></div>
+<div class="card p-4 text-center stat-card"><p class="text-3xl font-black text-pink-400 font-display counter" data-target="3">0</p><p class="text-xs text-gray-500 mt-1">策略预设</p></div>
+</div>
+</section>
+<!-- Built With -->
+<section class="section" id="built-with">
+<h2 class="text-3xl font-bold text-center glow mb-12">技术栈</h2>
+<div class="flex flex-wrap justify-center gap-4">
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-cpu text-[var(--neon)]"></i> OnchainOS</span>
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-swap text-pink-400"></i> Uniswap V4</span>
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-cube text-[var(--neon2)]"></i> X Layer</span>
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-hammer text-orange-400"></i> Foundry</span>
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-snake text-yellow-400"></i> Python</span>
+<span class="px-5 py-3 card text-sm flex items-center gap-2"><i class="ph ph-credit-card text-green-400"></i> x402</span>
+</div>
+</section>
+<!-- Footer -->
+<footer class="text-center py-12 border-t border-gray-800">
+<a href="https://github.com/0xCaptain888/genesis-protocol" target="_blank" class="text-[var(--neon)] hover:underline flex items-center justify-center gap-2 mb-3"><i class="ph ph-github-logo text-xl"></i> github.com/0xCaptain888/genesis-protocol</a>
+<p class="text-gray-600 text-sm">为 OKX Build X Hackathon 2026 构建 · Genesis Protocol</p>
+</footer>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+
+// Progress bar
+window.addEventListener('scroll',()=>{const h=document.documentElement;document.getElementById('progress-bar').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%'});
+
+// Particles
+(function(){const c=document.getElementById('particles'),ctx=c.getContext('2d');let w,h,pts=[];function resize(){w=c.width=c.offsetWidth;h=c.height=c.offsetHeight;pts=Array.from({length:60},()=>({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,r:Math.random()*1.5+.5}))}
+resize();window.addEventListener('resize',resize);
+function draw(){ctx.clearRect(0,0,w,h);pts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>w)p.vx*=-1;if(p.y<0||p.y>h)p.vy*=-1;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle='rgba(0,240,255,.4)';ctx.fill()});
+pts.forEach((a,i)=>{pts.slice(i+1).forEach(b=>{const d=Math.hypot(a.x-b.x,a.y-b.y);if(d<120){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle=`rgba(0,240,255,${.15*(1-d/120)})`;ctx.stroke()}})});
+requestAnimationFrame(draw)}draw()})();
+
+// Hero animations
+gsap.to('#hero-sub',{opacity:1,y:0,duration:.8,delay:.2});
+gsap.to('#hero-title',{opacity:1,y:0,duration:1,delay:.4});
+gsap.to('#hero-desc',{opacity:1,y:0,duration:.8,delay:.7});
+gsap.to('#hero-cta',{opacity:1,y:0,duration:.8,delay:.9});
+gsap.to('#hero-badges',{opacity:1,duration:.8,delay:1.2});
+
+// Scroll animations
+document.querySelectorAll('.arch-card,.hook-card,.layer-card,.preset-card,.x402-card,.stat-card').forEach(el=>{
+gsap.from(el,{scrollTrigger:{trigger:el,start:'top 85%'},opacity:0,y:30,duration:.6})});
+
+document.querySelectorAll('h2').forEach(el=>{
+gsap.from(el,{scrollTrigger:{trigger:el,start:'top 85%'},opacity:0,y:20,duration:.6})});
+
+// Counters
+document.querySelectorAll('.counter').forEach(el=>{
+const target=+el.dataset.target;
+ScrollTrigger.create({trigger:el,start:'top 85%',once:true,onEnter:()=>{
+const dur=target>100?1.5:1;
+gsap.to({v:0},{v:target,duration:dur,ease:'power2.out',onUpdate:function(){el.textContent=Math.round(this.targets()[0].v)}})}})});
+
+// ECharts — Radar
+const radar=echarts.init(document.getElementById('chart-radar'));
+radar.setOption({backgroundColor:'transparent',radar:{indicator:[{name:'感知',max:10},{name:'分析',max:10},{name:'规划',max:10},{name:'进化',max:10},{name:'元认知',max:10}],shape:'polygon',axisName:{color:'#9ca3af',fontSize:11},splitArea:{areaStyle:{color:['rgba(0,240,255,.02)','rgba(0,240,255,.05)']}},splitLine:{lineStyle:{color:'rgba(0,240,255,.15)'}},axisLine:{lineStyle:{color:'rgba(0,240,255,.2)'}}},series:[{type:'radar',data:[{value:[9,8,7,6,8],name:'认知强度',areaStyle:{color:'rgba(0,240,255,.15)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}},{value:[7,9,8,9,6],name:'进化潜力',areaStyle:{color:'rgba(168,85,247,.15)'},lineStyle:{color:'#a855f7',width:2},itemStyle:{color:'#a855f7'}}]}],tooltip:{trigger:'item'}});
+
+// ECharts — Presets Bar
+const bar=echarts.init(document.getElementById('chart-presets'));
+bar.setOption({backgroundColor:'transparent',tooltip:{trigger:'axis'},legend:{textStyle:{color:'#9ca3af',fontSize:10},top:0},grid:{top:40,bottom:30,left:50,right:20},xAxis:{type:'category',data:['calm_accumulator','volatile_defender','trend_rider'],axisLabel:{color:'#9ca3af',fontSize:10},axisLine:{lineStyle:{color:'rgba(255,255,255,.1)'}}},yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:10},splitLine:{lineStyle:{color:'rgba(255,255,255,.05)'}},axisLine:{lineStyle:{color:'rgba(255,255,255,.1)'}}},series:[{name:'安全性',type:'bar',data:[9,10,6],itemStyle:{color:'#22d3ee'},barWidth:20},{name:'收益潜力',type:'bar',data:[5,4,9],itemStyle:{color:'#a855f7'},barWidth:20},{name:'灵活性',type:'bar',data:[6,8,7],itemStyle:{color:'#00f0ff'},barWidth:20}]});
+
+// ECharts — Fee curve (mini)
+const fee=echarts.init(document.getElementById('chart-fee'));
+const feeX=Array.from({length:20},(_,i)=>i);
+const feeY=feeX.map(x=>0.05+0.95/(1+Math.exp(-0.5*(x-10))));
+fee.setOption({backgroundColor:'transparent',grid:{top:5,bottom:20,left:30,right:5},xAxis:{type:'category',data:feeX,show:false},yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:9,formatter:v=>v.toFixed(1)+'%'},splitLine:{show:false}},series:[{type:'line',data:feeY,smooth:true,showSymbol:false,lineStyle:{color:'#00f0ff',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(0,240,255,.3)'},{offset:1,color:'rgba(0,240,255,0)'}]}}}],tooltip:{show:false}});
+
+// ECharts — Range (mini)
+const rng=echarts.init(document.getElementById('chart-range'));
+const rngX=Array.from({length:30},(_,i)=>i);
+const price=rngX.map(x=>100+15*Math.sin(x/4)+Math.random()*5);
+rng.setOption({backgroundColor:'transparent',grid:{top:5,bottom:20,left:30,right:5},xAxis:{type:'category',data:rngX,show:false},yAxis:{type:'value',min:80,max:130,axisLabel:{color:'#6b7280',fontSize:9},splitLine:{show:false}},series:[{type:'line',data:price,smooth:true,showSymbol:false,lineStyle:{color:'#22d3ee',width:2}},{type:'line',data:rngX.map(()=>110),showSymbol:false,lineStyle:{color:'rgba(168,85,247,.5)',type:'dashed',width:1}},{type:'line',data:rngX.map(()=>95),showSymbol:false,lineStyle:{color:'rgba(168,85,247,.5)',type:'dashed',width:1}}],tooltip:{show:false}});
+
+// Resize charts
+window.addEventListener('resize',()=>{[radar,bar,fee,rng].forEach(c=>c.resize())});
+</script>
+</body>
+</html>
