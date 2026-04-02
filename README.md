@@ -90,8 +90,19 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 | **MEVProtectionModule** | `0xA4f6ABd6F77928b06F075637ccBACA8f89e17386` |
 | **AutoRebalanceModule** | `0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee` |
 | **StrategyNFT** | `0xd969448dfc24Fe3Aff25e86db338fAB41b104319` |
+| **GenesisHookAssembler (V2)** | `0x8da3b913362aa243BC89322Fe8012e70175B6D48` _(V4 Swap 测试用)_ |
 
-浏览器: [在 OKLink 查看](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
+浏览器: [在 OKLink 查看](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V2 Assembler](https://www.oklink.com/xlayer-test/address/0x8da3b913362aa243BC89322Fe8012e70175B6D48)
+
+### X Layer 主网 (Chain 196) -- 部署就绪
+
+主网部署脚本已就绪，钱包获得 OKB Gas 后即可一键部署：
+
+```bash
+cd contracts
+export PRIVATE_KEY=<your_key>
+forge script script/DeployMainnet.sol:DeployMainnet --rpc-url https://rpc.xlayer.tech --broadcast
+```
 
 ### Uniswap V4 Core 合约（X Layer）
 
@@ -265,12 +276,12 @@ python3 demo.py
 
 | 指标 | 数值 |
 |------|------|
-| 已创建策略 | 9 |
+| 已创建策略 | 9+ |
 | 决策日志条目 | 102+ |
-| 处理 Swap | 11 |
-| 铸造策略 NFT | 2 |
+| 处理 Swap | 24+ (含 V4 Hook 模块分发) |
+| 铸造策略 NFT | 5 |
 | 自主 Agent 循环 | 6（含参数进化） |
-| 总交易数 | 120+ |
+| 总交易数 | 170+ |
 
 ---
 
@@ -350,6 +361,8 @@ genesis-protocol/
 │   │       └── AutoRebalanceModule.sol IL 感知头寸管理
 │   ├── script/
 │   │   ├── Deploy.sol                 部署脚本
+│   │   ├── DeployMainnet.sol          X Layer 主网一键部署
+│   │   ├── MintNFTs.sol               批量 NFT 铸造脚本
 │   │   └── V4Swap.sol                 V4 Swap 全流程脚本
 │   └── test/GenesisTest.sol           43 个测试，全部通过
 │
@@ -375,6 +388,7 @@ genesis-protocol/
 │   ├── generate_chain_activity.py    自动化链上活动生成器
 │   ├── autonomous_agent_cycle.py     真实自主认知循环 (3 轮)
 │   ├── execute_v4_swap.py            V4 Swap 执行脚本
+│   ├── test_okx_api_live.py          OKX DEX API 集成测试
 │   └── mine_hook_address.py          CREATE2 地址挖矿
 │
 └── tests/                             Python 测试套件 (56 个测试)

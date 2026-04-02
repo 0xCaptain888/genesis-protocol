@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {IGenesisModule} from "./IGenesisModule.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+// SwapParams is nested in IPoolManager
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 /// @title GenesisHookAssembler - Composable V4 Hook Factory for X Layer
