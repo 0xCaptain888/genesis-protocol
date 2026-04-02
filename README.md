@@ -6,6 +6,8 @@ Genesis is an AI Agent Skill that autonomously generates, deploys, and manages c
 
 > OKX Build X Hackathon 2026 — Skills Arena Submission
 
+**[Live Demo](https://0xcaptain888.github.io/genesis-protocol/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
+
 ---
 
 ## Highlights
