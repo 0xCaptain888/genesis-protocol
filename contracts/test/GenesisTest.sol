@@ -4,11 +4,12 @@ pragma solidity ^0.8.26;
 import "forge-std/Test.sol";
 import {IGenesisModule} from "../src/IGenesisModule.sol";
 import {GenesisHookAssembler} from "../src/GenesisHookAssembler.sol";
-import {IPoolManager} from "../src/GenesisHookAssembler.sol";
 import {StrategyNFT} from "../src/StrategyNFT.sol";
 import {DynamicFeeModule} from "../src/modules/DynamicFeeModule.sol";
 import {MEVProtectionModule} from "../src/modules/MEVProtectionModule.sol";
 import {AutoRebalanceModule} from "../src/modules/AutoRebalanceModule.sol";
+import {GenesisV4Hook} from "../src/GenesisV4Hook.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 contract GenesisTest is Test {
     // --- Actors ---
@@ -85,8 +86,8 @@ contract GenesisTest is Test {
     // Helper: construct V4 SwapParams
     // ================================================================
 
-    function _swapParams(bool zeroForOne, int256 amount) internal pure returns (IPoolManager.SwapParams memory) {
-        return IPoolManager.SwapParams({
+    function _swapParams(bool zeroForOne, int256 amount) internal pure returns (GenesisHookAssembler.V4SwapParams memory) {
+        return GenesisHookAssembler.V4SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amount,
             sqrtPriceLimitX96: 0
@@ -534,6 +535,30 @@ contract GenesisTest is Test {
         vm.prank(alice);
         vm.expectRevert(AutoRebalanceModule.OnlyAssembler.selector);
         rebalModule.updateMarketState(0, 0);
+    }
+
+    // ================================================================
+    // 12. GenesisV4Hook Integration (compile check)
+    // ================================================================
+
+    function test_v4Hook_deploys() public {
+        // Use a mock address for PoolManager since we just need compile verification
+        GenesisV4Hook hook = new GenesisV4Hook(IPoolManager(address(0xF001)), assembler);
+        assertEq(address(hook.poolManager()), address(0xF001));
+        assertEq(address(hook.assembler()), address(assembler));
+    }
+
+    function test_v4Hook_ownerCanSetStrategy() public {
+        GenesisV4Hook hook = new GenesisV4Hook(IPoolManager(address(0xF001)), assembler);
+        hook.setActiveStrategy(42);
+        assertEq(hook.activeStrategyId(), 42);
+    }
+
+    function test_v4Hook_nonOwnerCannotSetStrategy() public {
+        GenesisV4Hook hook = new GenesisV4Hook(IPoolManager(address(0xF001)), assembler);
+        vm.prank(alice);
+        vm.expectRevert(GenesisV4Hook.OnlyOwner.selector);
+        hook.setActiveStrategy(1);
     }
 
     // ================================================================

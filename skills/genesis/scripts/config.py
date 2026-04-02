@@ -16,9 +16,9 @@ DRY_RUN = True          # If True, simulate all contract calls
 LOG_LEVEL = "INFO"      # "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 # ─── Chain Configuration ──────────────────────────────────────────────────
-CHAIN_ID = 196                          # X Layer mainnet
+CHAIN_ID = 1952                         # X Layer testnet
 CHAIN_NAME = "xlayer"
-RPC_URL = "https://rpc.xlayer.tech"
+RPC_URL = "https://xlayertestrpc.okx.com"
 EXPLORER_URL = "https://www.oklink.com/xlayer"
 ZERO_GAS_TOKENS = ["USDG", "USDT"]     # Zero gas fee tokens on X Layer
 

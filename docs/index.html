@@ -78,7 +78,7 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <section class="max-w-6xl mx-auto px-4 py-16" id="dashboard">
 <div class="flex items-center justify-between mb-8">
 <h2 class="text-2xl font-bold glow orb">Live Dashboard</h2>
-<span id="refresh-status" class="text-xs text-gray-500">Auto-refresh: 30s</span>
+<span id="refresh-status" class="text-xs text-gray-500">Auto-refresh: 15s</span>
 </div>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
 <div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="stat-strategies">--</p><p class="text-xs text-gray-500 mt-1">Strategies</p></div>
@@ -91,51 +91,27 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <div class="card p-5"><p class="text-xs text-gray-500 mb-1">Contract Deployed</p><p class="text-xl font-bold text-gray-300" id="stat-deployed">--</p></div>
 </div>
 <div class="card p-5">
-<p class="text-xs text-gray-500 mb-3">Market Activity</p>
+<p class="text-xs text-gray-500 mb-3">Cumulative Protocol Metrics <span class="text-gray-600">(live from contract)</span></p>
 <div id="chart-activity" style="height:200px"></div>
 </div>
 <!-- On-Chain Activity (Real Data) -->
 <div class="mt-8">
-<h3 class="text-sm font-bold text-[var(--neon)] orb mb-4">On-Chain Activity (Verified)</h3>
+<h3 class="text-sm font-bold text-[var(--neon)] orb mb-4">On-Chain Activity (Verified) <span class="text-gray-600 text-xs font-normal">Live from contract</span></h3>
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb">2</p><p class="text-xs text-gray-500 mt-1">Strategies Created</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb">10</p><p class="text-xs text-gray-500 mt-1">Decision Journal Entries</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb">2</p><p class="text-xs text-gray-500 mt-1">Strategy NFTs Minted</p></div>
-<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb">15+</p><p class="text-xs text-gray-500 mt-1">Total Transactions</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb" id="verified-strategies">--</p><p class="text-xs text-gray-500 mt-1">Strategies Created</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb" id="verified-decisions">--</p><p class="text-xs text-gray-500 mt-1">Decision Journal Entries</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb" id="verified-nfts">--</p><p class="text-xs text-gray-500 mt-1">Strategy NFTs Minted</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb" id="verified-swaps">--</p><p class="text-xs text-gray-500 mt-1">Swaps Processed</p></div>
 </div>
 </div>
 <!-- Recent Transactions -->
 <div class="mt-8">
 <h3 class="text-sm font-bold text-[var(--purple)] orb mb-4">Recent Transactions</h3>
-<div class="space-y-2">
-<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-<div class="flex items-center gap-2">
-<span class="w-2 h-2 rounded-full bg-cyan-400 flex-shrink-0"></span>
-<span class="text-xs text-gray-400">Strategy Creation</span>
+<div id="recent-tx-list" class="space-y-2">
+<div class="text-center py-4 text-gray-600 text-xs">Loading recent transactions...</div>
 </div>
-<a href="https://www.oklink.com/xlayer-test/tx/0x017c8250734017e1847327941ec1eee20999684a8d7f2dc2530f04c3477c89d6" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x017c8250734017e1847327941ec1eee20999684a8d7f2dc2530f04c3477c89d6</a>
-</div>
-<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-<div class="flex items-center gap-2">
-<span class="w-2 h-2 rounded-full bg-purple-400 flex-shrink-0"></span>
-<span class="text-xs text-gray-400">Decision Log (MARKET_ANALYSIS)</span>
-</div>
-<a href="https://www.oklink.com/xlayer-test/tx/0x2b142d22c1ff4ce5a5da18c421d91eb3038555d0924b53c0f5355cd43769dfd0" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x2b142d22c1ff4ce5a5da18c421d91eb3038555d0924b53c0f5355cd43769dfd0</a>
-</div>
-<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-<div class="flex items-center gap-2">
-<span class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"></span>
-<span class="text-xs text-gray-400">Performance Update</span>
-</div>
-<a href="https://www.oklink.com/xlayer-test/tx/0xeb6790b481c5d58a84cc739b98291f5988b62773b2983ccf8fd37b00f862bf32" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0xeb6790b481c5d58a84cc739b98291f5988b62773b2983ccf8fd37b00f862bf32</a>
-</div>
-<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-<div class="flex items-center gap-2">
-<span class="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0"></span>
-<span class="text-xs text-gray-400">NFT Mint</span>
-</div>
-<a href="https://www.oklink.com/xlayer-test/tx/0x9ceb18e20280974a6d016d50cb62c14488f990180d421dec3a094948c3982f83" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x9ceb18e20280974a6d016d50cb62c14488f990180d421dec3a094948c3982f83</a>
-</div>
+<div class="mt-3 text-center">
+<a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-xs text-[var(--neon)] hover:underline">View all transactions on X Layer Explorer &rarr;</a>
 </div>
 </div>
 </section>
@@ -318,11 +294,14 @@ const ASSEMBLER_ABI = [
   "function getActiveModules() view returns (address[])",
   "function createStrategy(address[]) returns (uint256)",
   "function logDecision(uint256, bytes32, bytes32, bytes)",
+  "event StrategyCreated(uint256 indexed strategyId, address indexed creator, address[] modules)",
+  "event DecisionLogged(uint256 indexed strategyId, bytes32 decisionType)",
 ];
 const NFT_ABI = [
   "function totalSupply() view returns (uint256)",
   "function ownerOf(uint256) view returns (address)",
   "function getStrategyMeta(uint256) view returns (tuple(address assembler, uint256 strategyId, bytes32 configHash, address[] modules, bytes[] moduleParams, uint256 totalSwaps, uint256 totalVolume, int256 pnlBps, uint256 decisionCount, uint256 mintedAt, uint256 runDurationSeconds, uint256 marketVolatility, uint256 marketPrice))",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
 ];
 const PRESETS = {
   calm: { name:'Calm Accumulator', modules:[CFG.dynamicFee, CFG.rebalance], risk:'Conservative', color:'#22d3ee' },
@@ -389,6 +368,17 @@ async function refreshDashboard() {
     set('stat-nfts', v(ns)!==null ? Number(v(ns)) : '--');
     if(v(vol)!==null) set('stat-volume', ethers.formatEther(v(vol))+' ETH');
     if(v(dep)!==null) { const d=new Date(Number(v(dep))*1000); set('stat-deployed', d.toLocaleDateString()+' '+d.toLocaleTimeString()); }
+    // Update verified on-chain activity section
+    set('verified-strategies', v(sc)!==null ? Number(v(sc)) : '--');
+    set('verified-decisions', v(dc)!==null ? Number(v(dc)) : '--');
+    set('verified-nfts', v(ns)!==null ? Number(v(ns)) : '--');
+    set('verified-swaps', v(sw)!==null ? Number(v(sw)) : '--');
+    // Update charts with real data
+    const volEth = v(vol)!==null ? parseFloat(ethers.formatEther(v(vol))) : null;
+    refreshActivityChart(v(sc), v(dc), v(sw), v(ns), volEth);
+    refreshRadarChart(v(sc), v(dc), v(sw), v(ns), volEth);
+    // Load recent transactions from events
+    loadRecentTransactions();
     // Load strategies table
     const count = v(sc)!==null ? Number(v(sc)) : 0;
     await loadStrategies(count);
@@ -398,7 +388,7 @@ async function refreshDashboard() {
     // Load NFTs
     const ncount = v(ns)!==null ? Number(v(ns)) : 0;
     await loadNFTs(ncount);
-    document.getElementById('refresh-status').textContent = 'Last: '+new Date().toLocaleTimeString()+' | Auto: 30s';
+    document.getElementById('refresh-status').textContent = 'Last: '+new Date().toLocaleTimeString()+' | Auto: 15s';
   } catch(e) {
     console.warn('Dashboard fetch error:', e);
     document.getElementById('refresh-status').textContent = 'RPC error - retrying...';
@@ -530,28 +520,33 @@ function toast(msg, color) {
 }
 
 // ── Charts ──
+let actChart, feeChart, rngChart, radarChart;
 function initCharts() {
-  // Activity chart
-  const actChart = echarts.init(document.getElementById('chart-activity'));
-  const hours = Array.from({length:24},(_,i)=>i+'h');
-  const simData = hours.map(()=>Math.floor(Math.random()*20+5));
-  actChart.setOption({backgroundColor:'transparent',grid:{top:10,bottom:25,left:40,right:10},
-    xAxis:{type:'category',data:hours,axisLabel:{color:'#6b7280',fontSize:10},axisLine:{lineStyle:{color:'rgba(255,255,255,.08)'}}},
+  // Activity chart - will be updated with real data in refreshActivityChart()
+  actChart = echarts.init(document.getElementById('chart-activity'));
+  actChart.setOption({backgroundColor:'transparent',grid:{top:10,bottom:25,left:50,right:10},
+    xAxis:{type:'category',data:['Strategies','Decisions','Swaps','NFTs','Volume (ETH)'],axisLabel:{color:'#6b7280',fontSize:10},axisLine:{lineStyle:{color:'rgba(255,255,255,.08)'}}},
     yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:10},splitLine:{lineStyle:{color:'rgba(255,255,255,.04)'}}},
-    series:[{type:'bar',data:simData,itemStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'#00f0ff'},{offset:1,color:'rgba(0,240,255,.2)'}]}},barWidth:8}],
+    series:[{type:'bar',data:[0,0,0,0,0],itemStyle:{color:function(p){
+      var colors=['#00f0ff','#a855f7','#22c55e','#eab308','#00f0ff'];
+      return {type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:colors[p.dataIndex]},{offset:1,color:colors[p.dataIndex]+'33'}]};
+    }},barWidth:30,label:{show:true,position:'top',color:'#e5e7eb',fontSize:11,formatter:function(p){return p.value>0?p.value:'--';}}}],
     tooltip:{trigger:'axis',backgroundColor:'#1f2937',borderColor:'#374151',textStyle:{color:'#e5e7eb',fontSize:11}}
   });
-  // Fee curve
-  const feeChart = echarts.init(document.getElementById('chart-fee'));
+
+  // Fee curve - model visualization
+  feeChart = echarts.init(document.getElementById('chart-fee'));
   const fX=Array.from({length:20},(_,i)=>i), fY=fX.map(x=>0.05+0.95/(1+Math.exp(-0.5*(x-10))));
-  feeChart.setOption({backgroundColor:'transparent',grid:{top:5,bottom:15,left:30,right:5},
+  feeChart.setOption({backgroundColor:'transparent',grid:{top:5,bottom:20,left:30,right:5},
     xAxis:{type:'category',data:fX,show:false},
     yAxis:{type:'value',axisLabel:{color:'#6b7280',fontSize:9,formatter:v=>v.toFixed(1)+'%'},splitLine:{show:false}},
     series:[{type:'line',data:fY,smooth:true,showSymbol:false,lineStyle:{color:'#00f0ff',width:2},
-      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(0,240,255,.25)'},{offset:1,color:'rgba(0,240,255,0)'}]}}}]
+      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(0,240,255,.25)'},{offset:1,color:'rgba(0,240,255,0)'}]}}}],
+    title:{text:'Fee Model (Sigmoid)',left:'center',bottom:0,textStyle:{color:'#6b7280',fontSize:9,fontWeight:'normal'}}
   });
+
   // Range chart
-  const rngChart = echarts.init(document.getElementById('chart-range'));
+  rngChart = echarts.init(document.getElementById('chart-range'));
   const rX=Array.from({length:30},(_,i)=>i), price=rX.map(x=>100+15*Math.sin(x/4)+Math.random()*5);
   rngChart.setOption({backgroundColor:'transparent',grid:{top:5,bottom:15,left:30,right:5},
     xAxis:{type:'category',data:rX,show:false},
@@ -562,26 +557,121 @@ function initCharts() {
       {type:'line',data:rX.map(()=>95),showSymbol:false,lineStyle:{color:'rgba(168,85,247,.5)',type:'dashed',width:1}}
     ]
   });
-  // Radar
-  const radarChart = echarts.init(document.getElementById('chart-radar'));
+
+  // Radar - will be updated with real data in refreshRadarChart()
+  radarChart = echarts.init(document.getElementById('chart-radar'));
   radarChart.setOption({backgroundColor:'transparent',
-    radar:{indicator:[{name:'Perception',max:10},{name:'Analysis',max:10},{name:'Planning',max:10},{name:'Evolution',max:10},{name:'Meta-Cognition',max:10}],
+    radar:{indicator:[{name:'Strategies',max:10},{name:'Swaps',max:50},{name:'Decisions',max:50},{name:'Volume (ETH)',max:10},{name:'NFTs',max:10}],
       shape:'polygon',axisName:{color:'#9ca3af',fontSize:11},
       splitArea:{areaStyle:{color:['rgba(0,240,255,.02)','rgba(0,240,255,.04)']}},
       splitLine:{lineStyle:{color:'rgba(0,240,255,.12)'}},axisLine:{lineStyle:{color:'rgba(0,240,255,.15)'}}},
     series:[{type:'radar',data:[
-      {value:[9,8,7,6,8],name:'Cognitive',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}},
-      {value:[7,9,8,9,6],name:'Evolution',areaStyle:{color:'rgba(168,85,247,.12)'},lineStyle:{color:'#a855f7',width:2},itemStyle:{color:'#a855f7'}}
-    ]}],tooltip:{trigger:'item'}
+      {value:[0,0,0,0,0],name:'Protocol Metrics',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}
+    ]}],tooltip:{trigger:'item'},
+    title:{text:'On-Chain Metrics Radar (Live)',left:'center',top:0,textStyle:{color:'#6b7280',fontSize:11,fontWeight:'normal'}}
   });
+
   window.addEventListener('resize',()=>{[actChart,feeChart,rngChart,radarChart].forEach(c=>c.resize())});
+}
+
+// ── Update charts with real data ──
+function refreshActivityChart(strategies, decisions, swaps, nfts, volumeEth) {
+  if (!actChart) return;
+  actChart.setOption({
+    series:[{data:[
+      strategies !== null ? Number(strategies) : 0,
+      decisions !== null ? Number(decisions) : 0,
+      swaps !== null ? Number(swaps) : 0,
+      nfts !== null ? Number(nfts) : 0,
+      volumeEth !== null ? parseFloat(volumeEth) : 0
+    ]}]
+  });
+}
+
+function refreshRadarChart(strategies, decisions, swaps, nfts, volumeEth) {
+  if (!radarChart) return;
+  const s = strategies !== null ? Number(strategies) : 0;
+  const d = decisions !== null ? Number(decisions) : 0;
+  const sw = swaps !== null ? Number(swaps) : 0;
+  const n = nfts !== null ? Number(nfts) : 0;
+  const vol = volumeEth !== null ? parseFloat(volumeEth) : 0;
+  // Adjust radar max dynamically
+  radarChart.setOption({
+    radar:{indicator:[
+      {name:'Strategies',max:Math.max(s*2,10)},
+      {name:'Swaps',max:Math.max(sw*2,50)},
+      {name:'Decisions',max:Math.max(d*2,50)},
+      {name:'Volume (ETH)',max:Math.max(vol*2,10)},
+      {name:'NFTs',max:Math.max(n*2,10)}
+    ]},
+    series:[{data:[{value:[s,sw,d,vol,n],name:'Protocol Metrics',areaStyle:{color:'rgba(0,240,255,.12)'},lineStyle:{color:'#00f0ff',width:2},itemStyle:{color:'#00f0ff'}}]}]
+  });
+}
+
+// ── Recent Transactions (dynamic from events) ──
+async function loadRecentTransactions() {
+  const el = document.getElementById('recent-tx-list');
+  try {
+    // Try to query recent events from the assembler contract
+    const currentBlock = await rpcProvider.getBlockNumber();
+    const fromBlock = Math.max(0, currentBlock - 5000); // last ~5000 blocks
+    const strategyFilter = rpcAssembler.filters.StrategyCreated ? rpcAssembler.filters.StrategyCreated() : null;
+    const decisionFilter = rpcAssembler.filters.DecisionLogged ? rpcAssembler.filters.DecisionLogged() : null;
+
+    let events = [];
+    if (strategyFilter) {
+      try {
+        const sEvents = await rpcAssembler.queryFilter(strategyFilter, fromBlock, currentBlock);
+        events = events.concat(sEvents.map(e => ({type:'Strategy Creation', hash:e.transactionHash, block:e.blockNumber, color:'bg-cyan-400'})));
+      } catch(e) { console.warn('Could not query StrategyCreated events:', e); }
+    }
+    if (decisionFilter) {
+      try {
+        const dEvents = await rpcAssembler.queryFilter(decisionFilter, fromBlock, currentBlock);
+        events = events.concat(dEvents.map(e => ({type:'Decision Logged', hash:e.transactionHash, block:e.blockNumber, color:'bg-purple-400'})));
+      } catch(e) { console.warn('Could not query DecisionLogged events:', e); }
+    }
+
+    // Also try NFT Transfer events
+    try {
+      const nftTransferFilter = rpcNft.filters.Transfer ? rpcNft.filters.Transfer(ethers.ZeroAddress) : null;
+      if (nftTransferFilter) {
+        const nEvents = await rpcNft.queryFilter(nftTransferFilter, fromBlock, currentBlock);
+        events = events.concat(nEvents.map(e => ({type:'NFT Mint', hash:e.transactionHash, block:e.blockNumber, color:'bg-yellow-400'})));
+      }
+    } catch(e) { console.warn('Could not query NFT events:', e); }
+
+    // Sort by block descending, take latest 6
+    events.sort((a,b) => b.block - a.block);
+    events = events.slice(0, 6);
+
+    if (events.length > 0) {
+      let html = '';
+      events.forEach(ev => {
+        html += `<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${ev.color} flex-shrink-0"></span>
+            <span class="text-xs text-gray-400">${ev.type}</span>
+            <span class="text-xs text-gray-600">Block #${ev.block}</span>
+          </div>
+          <a href="https://www.oklink.com/xlayer-test/tx/${ev.hash}" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">${ev.hash}</a>
+        </div>`;
+      });
+      el.innerHTML = html;
+    } else {
+      el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">No recent transactions found via events. <a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">View on Explorer</a></div>';
+    }
+  } catch(e) {
+    console.warn('Could not load recent transactions:', e);
+    el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">Could not query events. <a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">View transactions on Explorer</a></div>';
+  }
 }
 
 // ── Init ──
 updatePresetInfo();
 initCharts();
 refreshDashboard();
-setInterval(refreshDashboard, 30000);
+setInterval(refreshDashboard, 15000);
 </script>
 </body>
 </html>

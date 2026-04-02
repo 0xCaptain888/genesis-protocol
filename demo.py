@@ -45,10 +45,55 @@ def progress_bar(label, duration=1.0, steps=20):
         sys.stdout.flush()
     sys.stdout.write(f"] {styled('Done', 'green')}\n")
 
-# ─── Mock Market Data ───────────────────────────────────────────────────────
+# ─── Deterministic Market Data ───────────────────────────────────────────────
+
+def generate_price_walk(seed, start_price, steps=48, drift=0.0002, vol=0.012):
+    """
+    Generate a realistic price series using geometric Brownian motion with
+    mean reversion.  Uses a seeded RNG so results are reproducible across runs
+    while still looking like genuine market behavior.
+
+    Args:
+        seed:        int seed for reproducibility
+        start_price: initial price level
+        steps:       number of hourly data points to generate
+        drift:       annualized drift per step (slight upward bias)
+        vol:         per-step volatility (std dev of log returns)
+
+    Returns:
+        list of prices (floats) and realised volatility (float, %).
+    """
+    rng = random.Random(seed)
+    prices = [start_price]
+    mean_price = start_price
+    reversion_strength = 0.03  # pull toward mean
+
+    for _ in range(steps - 1):
+        shock = rng.gauss(0, vol)
+        reversion = reversion_strength * (mean_price - prices[-1]) / prices[-1]
+        log_return = drift + reversion + shock
+        prices.append(prices[-1] * (1 + log_return))
+
+    # Realised volatility as annualised % of hourly log returns
+    log_returns = [
+        (prices[i] - prices[i - 1]) / prices[i - 1]
+        for i in range(1, len(prices))
+    ]
+    realised_vol = (sum(r ** 2 for r in log_returns) / len(log_returns)) ** 0.5
+    annualised_vol_pct = round(realised_vol * (8760 ** 0.5) * 100, 2)  # hourly -> annual
+
+    return prices, annualised_vol_pct
+
+
+# Pre-generate deterministic series (seed ensures same output every run)
+_eth_prices, _eth_vol = generate_price_walk(seed=42, start_price=2450.0, vol=0.014)
+_okb_prices, _okb_vol = generate_price_walk(seed=99, start_price=48.5, vol=0.009)
+
 PAIRS = [
-    {"base": "ETH", "quote": "USDC", "price": 2450.0, "vol_24h": 3.2},
-    {"base": "OKB", "quote": "USDT", "price": 48.5, "vol_24h": 2.1},
+    {"base": "ETH", "quote": "USDC", "price": _eth_prices[-1], "vol_24h": _eth_vol,
+     "price_series": _eth_prices},
+    {"base": "OKB", "quote": "USDT", "price": _okb_prices[-1], "vol_24h": _okb_vol,
+     "price_series": _okb_prices},
 ]
 
 PRESETS = {
@@ -138,14 +183,14 @@ def perceive():
     log("Perception", "Fetching market data via OnchainOS Market...")
     progress_bar("onchainos market price", 0.8)
 
-    world = {"prices": {}, "volatility": {}, "wallets": {}}
+    world = {"prices": {}, "volatility": {}, "wallets": {}, "price_series": {}}
 
     for pair in PAIRS:
-        noise = random.uniform(-0.02, 0.02)
-        price = pair["price"] * (1 + noise)
-        vol = pair["vol_24h"] + random.uniform(-0.5, 0.5)
+        price = pair["price"]
+        vol = pair["vol_24h"]
         world["prices"][f"{pair['base']}/{pair['quote']}"] = round(price, 2)
         world["volatility"][f"{pair['base']}/{pair['quote']}"] = round(vol, 2)
+        world["price_series"][f"{pair['base']}/{pair['quote']}"] = pair.get("price_series", [price])
         log("Perception", f"  {pair['base']}/{pair['quote']}: ${price:,.2f}  vol={vol:.2f}%")
 
     log("Perception", "Querying wallet balances...")
@@ -175,21 +220,23 @@ def analyze(world):
     log("Analysis", "Computing market regime...", "blue")
     progress_bar("Volatility calculation (24h window)", 0.6)
 
+    # Use seeded RNG for reproducible analysis results
+    analysis_rng = random.Random(7)
     analysis = {"regimes": {}, "anomalies": [], "opportunities": []}
 
     for pair_name, vol in world["volatility"].items():
         if vol < 3.0:
             regime = "calm_accumulator"
             trend = "sideways"
-            conf = round(0.75 + random.uniform(0, 0.15), 2)
+            conf = round(0.75 + analysis_rng.uniform(0, 0.15), 2)
         elif vol > 5.0:
             regime = "volatile_defender"
             trend = "volatile"
-            conf = round(0.80 + random.uniform(0, 0.15), 2)
+            conf = round(0.80 + analysis_rng.uniform(0, 0.15), 2)
         else:
             regime = "trend_rider"
             trend = "trending"
-            conf = round(0.70 + random.uniform(0, 0.15), 2)
+            conf = round(0.70 + analysis_rng.uniform(0, 0.15), 2)
 
         analysis["regimes"][pair_name] = {"regime": regime, "trend": trend, "confidence": conf, "volatility": vol}
         color = "green" if regime == "calm_accumulator" else ("red" if regime == "volatile_defender" else "yellow")
@@ -273,8 +320,9 @@ def evolve():
     log("Evolution", "Reviewing historical performance (24h lookback)...", "yellow")
     progress_bar("Loading decision journal", 0.5)
 
+    evolve_rng = random.Random(13)
     metrics = {
-        "prediction_accuracy": round(0.72 + random.uniform(0, 0.1), 2),
+        "prediction_accuracy": round(0.72 + evolve_rng.uniform(0, 0.1), 2),
         "avg_pnl_bps": 150,
         "total_strategies_evaluated": 3,
         "rebalance_count": 4,

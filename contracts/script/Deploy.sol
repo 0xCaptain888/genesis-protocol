@@ -7,12 +7,14 @@ import {DynamicFeeModule} from "../src/modules/DynamicFeeModule.sol";
 import {MEVProtectionModule} from "../src/modules/MEVProtectionModule.sol";
 import {AutoRebalanceModule} from "../src/modules/AutoRebalanceModule.sol";
 import {StrategyNFT} from "../src/StrategyNFT.sol";
+import {GenesisV4Hook} from "../src/GenesisV4Hook.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 contract Deploy is Script {
 
     // Uniswap V4 on X Layer
-    address constant POOL_MANAGER = 0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32;
-    address constant UNIVERSAL_ROUTER = 0x112908dAc86e20E7241b0927479ea3bF935D1fA0;
+    address constant POOL_MANAGER = 0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32;
+    address constant UNIVERSAL_ROUTER = 0x112908daC86e20e7241B0927479Ea3Bf935d1fa0;
 
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
@@ -65,7 +67,11 @@ contract Deploy is Script {
         StrategyNFT nft = new StrategyNFT(deployer);
         console.log("StrategyNFT:", address(nft));
 
-        // 6. Register modules with assembler
+        // 6. Deploy GenesisV4Hook
+        GenesisV4Hook v4Hook = new GenesisV4Hook(IPoolManager(POOL_MANAGER), assembler);
+        console.log("GenesisV4Hook:", address(v4Hook));
+
+        // 7. Register modules with assembler
         assembler.registerModule(address(dynFee));
         assembler.registerModule(address(mevProt));
         assembler.registerModule(address(autoRebal));

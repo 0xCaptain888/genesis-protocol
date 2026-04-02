@@ -2,30 +2,9 @@
 pragma solidity ^0.8.26;
 
 import {IGenesisModule} from "./IGenesisModule.sol";
-
-/// @notice Minimal V4 type interfaces for X Layer integration
-/// PoolManager on X Layer: 0x360e68faccca8ca495c1b759fd9eee466db9fb32
-interface IPoolManager {
-    struct PoolKey {
-        address currency0;
-        address currency1;
-        uint24 fee;
-        int24 tickSpacing;
-        address hooks;
-    }
-
-    struct SwapParams {
-        bool zeroForOne;
-        int256 amountSpecified;
-        uint160 sqrtPriceLimitX96;
-    }
-}
-
-/// @notice BeforeSwapDelta return type for V4 hooks
-type BeforeSwapDelta is int256;
-
-/// @notice AfterSwapDelta return type for V4 hooks
-type AfterSwapDelta is int256;
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 
 /// @title GenesisHookAssembler - Composable V4 Hook Factory for X Layer
 /// @notice The core meta-hook for the Genesis Protocol. This contract:
@@ -43,6 +22,13 @@ type AfterSwapDelta is int256;
 contract GenesisHookAssembler {
 
     // ─── Types ───────────────────────────────────────────────────────────
+    /// @notice Struct used by GenesisV4Hook to pass swap parameters
+    struct V4SwapParams {
+        bool zeroForOne;
+        int256 amountSpecified;
+        uint160 sqrtPriceLimitX96;
+    }
+
     struct Strategy {
         uint256 id;
         address[] modules;
@@ -63,8 +49,8 @@ contract GenesisHookAssembler {
     }
 
     // ─── V4 Integration (X Layer) ──────────────────────────────────────
-    address public constant POOL_MANAGER = 0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32;
-    address public constant UNIVERSAL_ROUTER = 0x112908dAc86e20E7241b0927479ea3bF935D1fA0;
+    address public constant POOL_MANAGER = 0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32;
+    address public constant UNIVERSAL_ROUTER = 0x112908daC86e20e7241B0927479Ea3Bf935d1fa0;
     address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     // ─── State ───────────────────────────────────────────────────────────
@@ -205,7 +191,7 @@ contract GenesisHookAssembler {
     function onBeforeSwap(
         uint256 _stratId,
         address _sender,
-        IPoolManager.SwapParams calldata _params
+        V4SwapParams memory _params
     ) external returns (uint24 finalFee, bool blocked) {
         Strategy storage strat = strategies[_stratId];
         if (!strat.active) revert StrategyNotActive();
@@ -240,7 +226,7 @@ contract GenesisHookAssembler {
     /// @dev Called by PoolManager after each swap for state updates and rebalance signals
     function onAfterSwap(
         uint256 _stratId,
-        IPoolManager.SwapParams calldata _params,
+        V4SwapParams memory _params,
         uint256 _amountOut
     ) external {
         Strategy storage strat = strategies[_stratId];

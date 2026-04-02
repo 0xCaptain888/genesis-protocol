@@ -15,7 +15,7 @@ def test_safety_defaults():
 
 def test_chain_config():
     """X Layer chain configuration must be correct."""
-    assert config.CHAIN_ID == 196, "Chain ID must be 196 (X Layer)"
+    assert config.CHAIN_ID == 1952, "Chain ID must be 1952 (X Layer Testnet)"
     assert "xlayer" in config.RPC_URL.lower()
 
 
