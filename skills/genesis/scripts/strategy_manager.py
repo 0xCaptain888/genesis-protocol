@@ -14,6 +14,7 @@ from . import config
 from .decision_journal import DecisionJournal
 from .nft_minter import NFTMinter
 from .hook_assembler import HookAssembler
+from .security_scanner import SecurityScanner
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class StrategyManager:
         self.assembler = HookAssembler(self.assembler_address)
         self.journal = DecisionJournal(self.assembler_address)
         self.nft_minter = NFTMinter(self.nft_address, self.assembler_address)
+        self.security = SecurityScanner()
         self.strategies = {}
         self._load_local_registry()
         logger.info("StrategyManager ready (%d strategies loaded)", len(self.strategies))
@@ -45,6 +47,17 @@ class StrategyManager:
             "volatility_bps": market_data.get("volatility_bps", 0) if isinstance(market_data, dict) else 0,
             "trend": market_data.get("trend", "sideways") if isinstance(market_data, dict) else "sideways",
         }
+        # ── Security check before deployment ────────────────────────────
+        token0_addr = market_data.get("token0", "") if isinstance(market_data, dict) else ""
+        token1_addr = market_data.get("token1", "") if isinstance(market_data, dict) else ""
+        if token0_addr and token1_addr:
+            safe, reason = self.security.is_safe_for_strategy(token0_addr, token1_addr)
+            logger.info("Security check: safe=%s reason=%s", safe, reason)
+            if not safe and not config.PAUSED:
+                return {"error": f"Security check failed: {reason}"}
+        else:
+            logger.info("Security check skipped: token addresses not provided in market_data")
+
         deploy_result = self.assembler.compose_and_deploy(regime_dict, market_data if isinstance(market_data, dict) else {})
         if deploy_result.get("error"):
             logger.error("compose_and_deploy failed: %s", deploy_result)

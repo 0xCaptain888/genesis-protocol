@@ -28,8 +28,10 @@ dependencies:
     - onchainos-wallet
     - onchainos-trade
     - onchainos-market
+    - onchainos-security
   optional:
     - onchainos-payment
+    - onchainos-defi-invest
     - uniswap-hooks
     - uniswap-trading
     - pay-with-any-token

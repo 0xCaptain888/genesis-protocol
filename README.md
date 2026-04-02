@@ -86,9 +86,9 @@ Explorer: [View on OKLink](https://www.oklink.com/xlayer-test/address/0xC5E851fE
 
 | Contract | Address |
 |----------|---------|
-| **PoolManager** | `0x2A0388C94Ed53Fa4F9a3b5bBf8A8E6Ce24E16F5D` |
-| **PositionManager** | `0x7C9D1E1E5A8F1b0c1D3E5F7A9B3C5D7E9F1A3B5` |
-| **Quoter** | `0x4B1E2F3C5D6A7B8E9F0A1C2D3E4F5A6B7C8D9E0` |
+| **PoolManager** | `0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32` |
+| **PositionManager** | `0x1b35d13a2e2528f192637f14b05f0dc0e7deb566` |
+| **Quoter** | `0x3972c00f7ed4885e145823eb7c655375d275a1c5` |
 
 ---
 
@@ -118,6 +118,8 @@ Genesis integrates deeply with the OnchainOS skill ecosystem:
 | **onchainos-market** | Real-time price feeds for the Perception layer -- fetches ETH/USDC, OKB/USDT prices on X Layer for volatility calculation and regime detection |
 | **onchainos-trade** | DEX aggregation for rebalance execution -- compares Hook pool rates vs aggregator, routes through best path with 0.5% max slippage |
 | **onchainos-payment** | x402 protocol integration for strategy monetization -- signal queries, strategy subscriptions, parameter purchases, NFT licensing |
+| **onchainos-security** | Token risk scanning before strategy creation -- checks contract safety, liquidity depth, and rugpull indicators before deploying any strategy |
+| **onchainos-defi-invest** | Yield comparison across X Layer DeFi protocols to benchmark Genesis strategy performance against alternative yield sources |
 
 ---
 

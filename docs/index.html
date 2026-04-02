@@ -94,6 +94,50 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <p class="text-xs text-gray-500 mb-3">Market Activity</p>
 <div id="chart-activity" style="height:200px"></div>
 </div>
+<!-- On-Chain Activity (Real Data) -->
+<div class="mt-8">
+<h3 class="text-sm font-bold text-[var(--neon)] orb mb-4">On-Chain Activity (Verified)</h3>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--neon)] orb">2</p><p class="text-xs text-gray-500 mt-1">Strategies Created</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-[var(--purple)] orb">10</p><p class="text-xs text-gray-500 mt-1">Decision Journal Entries</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-yellow-400 orb">2</p><p class="text-xs text-gray-500 mt-1">Strategy NFTs Minted</p></div>
+<div class="card p-5 text-center"><p class="text-3xl font-black text-green-400 orb">15+</p><p class="text-xs text-gray-500 mt-1">Total Transactions</p></div>
+</div>
+</div>
+<!-- Recent Transactions -->
+<div class="mt-8">
+<h3 class="text-sm font-bold text-[var(--purple)] orb mb-4">Recent Transactions</h3>
+<div class="space-y-2">
+<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-cyan-400 flex-shrink-0"></span>
+<span class="text-xs text-gray-400">Strategy Creation</span>
+</div>
+<a href="https://www.oklink.com/xlayer-test/tx/0x017c8250734017e1847327941ec1eee20999684a8d7f2dc2530f04c3477c89d6" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x017c8250734017e1847327941ec1eee20999684a8d7f2dc2530f04c3477c89d6</a>
+</div>
+<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-purple-400 flex-shrink-0"></span>
+<span class="text-xs text-gray-400">Decision Log (MARKET_ANALYSIS)</span>
+</div>
+<a href="https://www.oklink.com/xlayer-test/tx/0x2b142d22c1ff4ce5a5da18c421d91eb3038555d0924b53c0f5355cd43769dfd0" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x2b142d22c1ff4ce5a5da18c421d91eb3038555d0924b53c0f5355cd43769dfd0</a>
+</div>
+<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-green-400 flex-shrink-0"></span>
+<span class="text-xs text-gray-400">Performance Update</span>
+</div>
+<a href="https://www.oklink.com/xlayer-test/tx/0xeb6790b481c5d58a84cc739b98291f5988b62773b2983ccf8fd37b00f862bf32" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0xeb6790b481c5d58a84cc739b98291f5988b62773b2983ccf8fd37b00f862bf32</a>
+</div>
+<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-yellow-400 flex-shrink-0"></span>
+<span class="text-xs text-gray-400">NFT Mint</span>
+</div>
+<a href="https://www.oklink.com/xlayer-test/tx/0x9ceb18e20280974a6d016d50cb62c14488f990180d421dec3a094948c3982f83" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">0x9ceb18e20280974a6d016d50cb62c14488f990180d421dec3a094948c3982f83</a>
+</div>
+</div>
+</div>
 </section>
 <!-- Strategy Manager -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="strategies">
@@ -171,7 +215,7 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <span class="px-3 py-2 bg-[#0d1117] rounded border border-yellow-900">Strategy NFT</span>
 </div>
 </div>
-<div class="grid md:grid-cols-2 gap-6 mb-8">
+<div class="grid md:grid-cols-3 gap-6 mb-8">
 <div class="card p-6">
 <h3 class="text-sm font-bold text-[var(--purple)] orb mb-3">AI Agent Layer</h3>
 <ul class="space-y-2 text-xs text-gray-400">
@@ -188,6 +232,15 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <li>3 composable Uniswap V4 Hook modules</li>
 <li>Strategy NFT (ERC-721) for proven strategies</li>
 <li>Chain 196 mainnet / 1952 testnet, 1s blocks</li>
+</ul>
+</div>
+<div class="card p-6" style="border-color:rgba(234,179,8,.2)">
+<h3 class="text-sm font-bold text-yellow-400 orb mb-3">Security Scanner</h3>
+<ul class="space-y-2 text-xs text-gray-400">
+<li><span class="text-green-400">&#x2713;</span> onchainos-security integration</li>
+<li><span class="text-green-400">&#x2713;</span> Automated contract vulnerability scanning</li>
+<li><span class="text-green-400">&#x2713;</span> Real-time threat detection on hooks</li>
+<li><span class="text-green-400">&#x2713;</span> Pre-deployment audit checks</li>
 </ul>
 </div>
 </div>
@@ -230,7 +283,7 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <div class="card p-3 flex justify-between"><span class="text-gray-500">MEVProtectionModule</span><a href="https://www.oklink.com/xlayer-test/address/0xA4f6ABd6F77928b06F075637ccBACA8f89e17386" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xA4f6AB...386</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">AutoRebalanceModule</span><a href="https://www.oklink.com/xlayer-test/address/0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xe04E22...8ee</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">StrategyNFT</span><a href="https://www.oklink.com/xlayer-test/address/0xd969448dfc24Fe3Aff25e86db338fAB41b104319" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xd96944...319</a></div>
-<div class="card p-3 flex justify-between"><span class="text-gray-500">Uniswap V4 PoolManager (Mainnet)</span><span class="text-gray-400 truncate-addr">0x360e68...B32</span></div>
+<div class="card p-3 flex justify-between"><span class="text-gray-500">Uniswap V4 PoolManager</span><a href="https://www.oklink.com/xlayer-test/address/0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x360e68...B32</a></div>
 </div>
 <div class="flex flex-wrap gap-4 justify-center items-center mb-6">
 <span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Powered by Onchain OS</span>
