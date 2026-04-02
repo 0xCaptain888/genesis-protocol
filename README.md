@@ -5,30 +5,30 @@
 
 # Genesis Protocol
 
-**AI-Powered Uniswap V4 Hook Strategy Engine for X Layer**
+**面向 X Layer 的 AI 驱动 Uniswap V4 Hook 策略引擎**
 
-Genesis is an AI Agent Skill that autonomously generates, deploys, and manages composable Uniswap V4 Hook strategies on [X Layer](https://www.okx.com/xlayer). It combines on-chain Solidity modules with a 5-layer AI cognitive architecture to deliver institutional-grade DeFi strategy management.
+Genesis 是一个 AI Agent Skill，能够在 [X Layer](https://www.okx.com/xlayer) 上自主生成、部署和管理可组合的 Uniswap V4 Hook 策略。它将链上 Solidity 模块与 5 层 AI 认知架构相结合，提供机构级 DeFi 策略管理。
 
-**[Interactive dApp](https://0xcaptain888.github.io/genesis-protocol/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
-
----
-
-## Project Overview / 项目简介
-
-Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategies on X Layer. It perceives market conditions, analyzes volatility regimes, plans optimal hook configurations, evolves its own parameters over time, and mints proven strategies as NFTs. Every decision is logged on-chain with reasoning hashes for full auditability.
-
-### Highlights
-
-- **Hook Template Engine** -- 3 composable Solidity modules (DynamicFee, MEVProtection, AutoRebalance) assembled by AI into custom V4 Hook configurations
-- **5-Layer AI Cognitive Architecture** -- Perception, Analysis, Planning, Evolution, Meta-Cognition
-- **Strategy NFTs** -- Proven strategies minted as ERC-721 with full on-chain metadata
-- **On-Chain Decision Journal** -- Every AI decision logged with reasoning hashes for full auditability
-- **x402 Payment Monetization** -- Signal queries, strategy subscriptions, parameter purchases, NFT licensing. **Pay with any token** via Uniswap auto-swap.
-- **X Layer Native** -- Zero gas fees with USDG/USDT, ~$0.0005/tx, 1s block time
+**[交互式 dApp](https://0xcaptain888.github.io/genesis-protocol/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
 
 ---
 
-## Architecture Overview / 架构概述
+## 项目简介
+
+Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hook 策略。它感知市场状况、分析波动率区间、规划最优 Hook 配置、随时间进化自身参数，并将经过验证的策略铸造为 NFT。每一个决策都带有推理哈希记录在链上，实现完全可审计。
+
+### 核心亮点
+
+- **Hook 模板引擎** -- 3 个可组合 Solidity 模块（DynamicFee、MEVProtection、AutoRebalance），由 AI 组装成自定义 V4 Hook 配置
+- **5 层 AI 认知架构** -- 感知层、分析层、规划层、进化层、元认知层
+- **策略 NFT** -- 经验证的策略铸造为 ERC-721，全链上元数据
+- **链上决策日志** -- 每个 AI 决策都带推理哈希记录在链上，完全可审计
+- **x402 支付变现** -- 信号查询、策略订阅、参数购买、NFT 授权。通过 Uniswap 自动兑换**支持任意代币支付**
+- **X Layer 原生** -- 使用 USDG/USDT 零 Gas 费，每笔交易约 $0.0005，1 秒出块
+
+---
+
+## 架构概述
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -37,11 +37,11 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 │  ┌───────────┐  ┌──────────┐  ┌───────────────────┐    │
 │  │  Market    │  │ Genesis  │  │    Strategy        │    │
 │  │  Oracle    │→ │ Engine   │→ │    Manager         │    │
-│  │           │  │ (5-layer)│  │                    │    │
+│  │  市场预言机│  │(5层认知) │  │    策略管理器      │    │
 │  └───────────┘  └──────────┘  └───────────────────┘    │
 │        ↑              │              │                   │
-│   onchainos       Decision       Hook                   │
-│   market          Journal        Assembler              │
+│   onchainos       决策日志        Hook                   │
+│   market          (链上)        组装器                   │
 │                      │              │                   │
 ├──────────────────────┼──────────────┼───────────────────┤
 │                 X Layer (Chain 196)                      │
@@ -54,8 +54,8 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 │                      ▼                                  │
 │  ┌──────────────────────────────────────────────┐      │
 │  │            GenesisV4Hook (IHooks)             │      │
-│  │   Receives callbacks from PoolManager,        │      │
-│  │   delegates module dispatch to Assembler      │      │
+│  │   接收 PoolManager 回调，                     │      │
+│  │   将模块分发委托给 Assembler                  │      │
 │  └───────────────────┬──────────────────────────┘      │
 │                      │                                  │
 │                      ▼                                  │
@@ -63,171 +63,172 @@ Genesis Protocol is an autonomous AI agent that manages Uniswap V4 Hook strategi
 │  │          GenesisHookAssembler                   │     │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────────┐   │     │
 │  │  │DynamicFee│ │   MEV    │ │AutoRebalance │   │     │
-│  │  │ Module   │ │Protection│ │   Module     │   │     │
+│  │  │ 动态费率 │ │ MEV防护  │ │  自动再平衡  │   │     │
 │  │  └──────────┘ └──────────┘ └──────────────┘   │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                         │
 │  ┌──────────────┐  ┌──────────────────────────┐        │
 │  │ StrategyNFT  │  │   Decision Journal       │        │
-│  │  (ERC-721)   │  │   (on-chain log)         │        │
+│  │ 策略NFT      │  │   决策日志(链上)         │        │
+│  │  (ERC-721)   │  │                          │        │
 │  └──────────────┘  └──────────────────────────┘        │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Deployment Addresses / 部署地址
+## 部署地址
 
-### Genesis Protocol Contracts (X Layer Testnet - Chain 1952)
+### Genesis Protocol 合约（X Layer 测试网 - Chain 1952）
 
-| Contract | Address |
-|----------|---------|
+| 合约 | 地址 |
+|------|------|
 | **GenesisHookAssembler** | `0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78` |
-| **GenesisV4Hook** | `0x79a96bB2Ab2342cf6f1dD3c622F5CB01f9F7A8d4` _(CREATE2-mined, flags: BEFORE_SWAP\|AFTER_SWAP)_ |
+| **GenesisV4Hook** | `0x79a96bB2Ab2342cf6f1dD3c622F5CB01f9F7A8d4` _(CREATE2 挖矿部署, flags: BEFORE_SWAP\|AFTER_SWAP)_ |
 | **HookDeployer** | `0xe38ac0DD1fe57Cb02DB80884eA14D47Fa181dF64` |
 | **DynamicFeeModule** | `0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed` |
 | **MEVProtectionModule** | `0xA4f6ABd6F77928b06F075637ccBACA8f89e17386` |
 | **AutoRebalanceModule** | `0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee` |
 | **StrategyNFT** | `0xd969448dfc24Fe3Aff25e86db338fAB41b104319` |
 
-Explorer: [View on OKLink](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
+浏览器: [在 OKLink 查看](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
 
-### Uniswap V4 Core Contracts (X Layer)
+### Uniswap V4 Core 合约（X Layer）
 
-| Contract | Address |
-|----------|---------|
+| 合约 | 地址 |
+|------|------|
 | **PoolManager** | `0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32` |
 | **PositionManager** | `0x1b35d13a2e2528f192637f14b05f0dc0e7deb566` |
 | **Quoter** | `0x3972c00f7ed4885e145823eb7c655375d275a1c5` |
 
 ---
 
-## Agentic Wallet / 代理钱包架构
+## 代理钱包架构
 
-Genesis uses a **5 sub-wallet architecture** via OnchainOS TEE-based agentic wallet to isolate risk and enforce separation of concerns:
+Genesis 通过 OnchainOS TEE 代理钱包使用 **5 子钱包架构**，隔离风险并强制职责分离：
 
-| Index | Role | Purpose |
-|-------|------|---------|
-| 0 | **Master** | Main control wallet -- approvals, ownership, admin |
-| 1 | **Strategy** | Deploys and manages Hook strategies on Uniswap V4 |
-| 2 | **Income** | Receives LP fees and x402 payment revenue |
-| 3 | **Reserve** | Emergency reserve fund -- untouched during normal operation |
-| 4 | **Rebalance** | Executes rebalance operations with isolated funds |
+| 索引 | 角色 | 用途 |
+|------|------|------|
+| 0 | **主控** | 主控钱包 -- 审批、所有权、管理操作 |
+| 1 | **策略** | 在 Uniswap V4 上部署和管理 Hook 策略 |
+| 2 | **收入** | 接收 LP 手续费和 x402 支付收入 |
+| 3 | **储备** | 应急储备金 -- 正常运行时不触碰 |
+| 4 | **再平衡** | 用隔离资金执行再平衡操作 |
 
-This architecture ensures that a bug in rebalance logic cannot drain strategy funds, and income is always separated from operational capital. The master wallet holds no trading funds -- it only signs administrative transactions.
-
----
-
-## Onchain OS Integration / Onchain OS Skill 使用情况
-
-Genesis integrates deeply with the OnchainOS skill ecosystem:
-
-| OnchainOS Skill | Usage in Genesis |
-|----------------|-----------------|
-| **onchainos-wallet** | TEE-based agentic wallet with 5 sub-wallets for role isolation (master, strategy, income, reserve, rebalance) |
-| **onchainos-market** | Real-time price feeds for the Perception layer -- fetches ETH/USDC, OKB/USDT prices on X Layer for volatility calculation and regime detection |
-| **onchainos-trade** | DEX aggregation for rebalance execution -- compares Hook pool rates vs aggregator, routes through best path with 0.5% max slippage |
-| **onchainos-payment** | x402 protocol integration for strategy monetization -- signal queries, strategy subscriptions, parameter purchases, NFT licensing |
-| **onchainos-security** | Token risk scanning before strategy creation -- checks contract safety, liquidity depth, and rugpull indicators before deploying any strategy |
-| **onchainos-defi-invest** | Yield comparison across X Layer DeFi protocols to benchmark Genesis strategy performance against alternative yield sources |
+该架构确保再平衡逻辑的 bug 不会耗尽策略资金，收入始终与运营资本分离。主控钱包不持有交易资金 -- 只签署管理交易。
 
 ---
 
-## Uniswap Skills Integration / Uniswap Skill 使用情况
+## Onchain OS Skill 集成
 
-Genesis leverages Uniswap V4 as its core DeFi primitive:
+Genesis 深度集成 OnchainOS Skill 生态：
 
-| Uniswap Skill | Usage in Genesis |
-|--------------|-----------------|
-| **uniswap-v4-hooks** | Composable hook modules via GenesisHookAssembler -- DynamicFee, MEVProtection, and AutoRebalance modules are registered as V4 hooks that intercept `beforeSwap` and `afterSwap` |
-| **uniswap-v4-position-manager** | Manages concentrated liquidity positions for each strategy -- creates, adjusts, and closes positions based on AI rebalance signals |
-| **uniswap-v4-quoter** | Pre-swap quotes for slippage estimation -- used by the Planning layer to simulate strategy outcomes before execution |
-| **uniswap-pay-with-any-token** | Accept x402 payments in any ERC-20 token -- auto-swaps to USDT via Uniswap before settlement, enabling frictionless monetization |
+| OnchainOS Skill | 在 Genesis 中的用途 |
+|-----------------|-------------------|
+| **onchainos-wallet** | 基于 TEE 的代理钱包，5 个子钱包实现角色隔离（主控、策略、收入、储备、再平衡） |
+| **onchainos-market** | 感知层的实时价格数据 -- 获取 X Layer 上 ETH/USDC、OKB/USDT 价格，用于波动率计算和区间检测 |
+| **onchainos-trade** | 再平衡执行的 DEX 聚合 -- 比较 Hook 池费率与聚合器，通过最优路径路由，最大滑点 0.5% |
+| **onchainos-payment** | x402 协议集成实现策略变现 -- 信号查询、策略订阅、参数购买、NFT 授权 |
+| **onchainos-security** | 策略创建前的代币风险扫描 -- 检查合约安全性、流动性深度和 rugpull 指标 |
+| **onchainos-defi-invest** | 跨 X Layer DeFi 协议的收益比较，用于基准测试 Genesis 策略表现 |
 
 ---
 
-## How It Works / 运作机制
+## Uniswap Skill 集成
 
-### AI Cognitive Architecture (5 Layers)
+Genesis 以 Uniswap V4 作为核心 DeFi 原语：
 
-| Layer | Interval | Function |
-|-------|----------|----------|
-| **Perception** | 60s | Fetch market data, wallet balances, strategy states via onchainos-market |
-| **Analysis** | 300s | Volatility calculation, trend detection, regime classification |
-| **Planning** | On signal | Action generation with confidence scoring (threshold: 0.7) |
-| **Evolution** | 24h | Meta-learning: adjust thresholds from historical performance |
-| **Meta-Cognition** | 24h | Self-assessment: evaluate decision quality, detect biases |
+| Uniswap Skill | 在 Genesis 中的用途 |
+|---------------|-------------------|
+| **uniswap-v4-hooks** | 通过 GenesisHookAssembler 实现可组合 Hook 模块 -- DynamicFee、MEVProtection 和 AutoRebalance 模块注册为 V4 Hook，拦截 `beforeSwap` 和 `afterSwap` |
+| **uniswap-v4-position-manager** | 管理每个策略的集中流动性头寸 -- 根据 AI 再平衡信号创建、调整和关闭头寸 |
+| **uniswap-v4-quoter** | 预交换报价用于滑点估算 -- 规划层用其模拟策略执行结果 |
+| **uniswap-pay-with-any-token** | 接受任意 ERC-20 代币的 x402 支付 -- 结算前通过 Uniswap 自动兑换为 USDT，实现无摩擦变现 |
 
-### Smart Contracts
+---
 
-**GenesisHookAssembler** -- The core "meta-hook" factory. Accepts an array of `IGenesisModule` addresses, dispatches `beforeSwap`/`afterSwap` calls to each module, and aggregates results (highest fee wins, any module can block). Includes built-in strategy registry and decision journal.
+## 运作机制
 
-**GenesisV4Hook** -- Real Uniswap V4 hook implementation. Inherits from IHooks (v4-core), receives beforeSwap/afterSwap callbacks from PoolManager, delegates module dispatch to GenesisHookAssembler. Returns dynamic fees with OVERRIDE_FEE_FLAG for V4 fee override.
+### AI 认知架构（5 层）
 
-| Module | What It Does |
-|--------|-------------|
-| **DynamicFeeModule** | Fee = f(volatility). Range 0.05%-1.00%, with low/high regime thresholds. Stale data fallback to maxFee after 1 hour. |
-| **MEVProtectionModule** | Per-block swap pattern tracking. Detects sandwich attacks via count threshold, volume threshold, and cross-address buy-sell patterns. Can penalize or block. |
-| **AutoRebalanceModule** | Monitors position boundaries, emits `RebalanceNeeded` events for off-chain execution. Three trigger types: hard, soft, IL threshold. Three strategies: IMMEDIATE, TWAP, THRESHOLD_ACCUMULATE. |
+| 层级 | 周期 | 功能 |
+|------|------|------|
+| **感知层** | 60秒 | 通过 onchainos-market 获取市场数据、钱包余额、策略状态 |
+| **分析层** | 300秒 | 波动率计算、趋势检测、区间分类 |
+| **规划层** | 信号触发 | 生成带置信度评分的行动计划（阈值：0.7） |
+| **进化层** | 24小时 | 元学习：根据历史表现调整阈值 |
+| **元认知层** | 24小时 | 自我评估：评估决策质量、检测偏差 |
 
-**StrategyNFT** -- Minimal ERC-721 (no OpenZeppelin dependency). On-chain metadata includes: module composition, all parameters, P&L, swap count, volume, decision count, market conditions at mint time. Fully verifiable -- no IPFS dependency.
+### 智能合约
 
-### Strategy Presets
+**GenesisHookAssembler** -- 核心"元 Hook"工厂。接受 `IGenesisModule` 地址数组，将 `beforeSwap`/`afterSwap` 调用分发到每个模块，并聚合结果（最高费率优先，任何模块可阻断）。内置策略注册表和决策日志。
 
-| Preset | Market Condition | Modules | Key Feature |
-|--------|-----------------|---------|-------------|
-| `calm_accumulator` | Low vol, sideways | Fee + Rebalance | Low fees (0.01-0.30%) to attract volume |
-| `volatile_defender` | High vol, any trend | Fee + MEV + Rebalance | High fees (0.10-1.50%), MEV blocking enabled |
-| `trend_rider` | Medium vol, trending | Fee + MEV + Rebalance | TWAP rebalance, damped fee sensitivity |
+**GenesisV4Hook** -- 真实的 Uniswap V4 Hook 实现。继承 IHooks（v4-core），接收 PoolManager 的 beforeSwap/afterSwap 回调，将模块分发委托给 GenesisHookAssembler。使用 OVERRIDE_FEE_FLAG 返回动态费率以覆盖 V4 费率。
 
-### Safety Defaults
+| 模块 | 功能 |
+|------|------|
+| **DynamicFeeModule** | 费率 = f(波动率)。范围 0.05%-1.00%，含高低区间阈值。数据过期 1 小时后回退至最大费率。 |
+| **MEVProtectionModule** | 按区块追踪 swap 模式。通过计数阈值、成交量阈值和跨地址买卖模式检测三明治攻击。可处罚或阻断。 |
+| **AutoRebalanceModule** | 监控头寸边界，发出 `RebalanceNeeded` 事件供链下执行。三种触发类型：硬触发、软触发、IL 阈值。三种策略：立即执行、TWAP、阈值累积。 |
 
-Genesis ships paused with paper trading enabled. All three flags must be explicitly disabled:
+**StrategyNFT** -- 最小化 ERC-721（无 OpenZeppelin 依赖）。链上元数据包括：模块组合、所有参数、P&L、swap 次数、成交量、决策次数、铸造时的市场状况。完全可验证 -- 不依赖 IPFS。
+
+### 策略预设
+
+| 预设 | 市场条件 | 模块 | 核心特性 |
+|------|---------|------|---------|
+| `calm_accumulator` | 低波动率，横盘 | Fee + Rebalance | 低费率 (0.01-0.30%) 吸引交易量 |
+| `volatile_defender` | 高波动率，任意趋势 | Fee + MEV + Rebalance | 高费率 (0.10-1.50%)，启用 MEV 阻断 |
+| `trend_rider` | 中波动率，趋势行情 | Fee + MEV + Rebalance | TWAP 再平衡，衰减费率敏感度 |
+
+### 安全默认值
+
+Genesis 出厂时暂停运行并启用模拟交易。必须显式禁用以下三个标志：
 
 ```python
-PAUSED   = True     # Engine observes but does not act
-MODE     = "paper"  # Paper trading simulation
-DRY_RUN  = True     # No on-chain transactions broadcast
+PAUSED   = True     # 引擎观察但不执行
+MODE     = "paper"  # 模拟交易模式
+DRY_RUN  = True     # 不广播链上交易
 ```
 
-Additional safeguards:
-- Max 30% of wallet per strategy
-- Confidence gating at 0.7
-- 5-wallet isolation (master/strategy/income/reserve/rebalance)
-- Rebalance cooldown enforcement (300s default)
-- 0.5% max slippage on DEX operations
+额外安全措施：
+- 每个策略最大 30% 钱包资金
+- 置信度门控 0.7
+- 5 钱包隔离（主控/策略/收入/储备/再平衡）
+- 再平衡冷却时间（默认 300 秒）
+- DEX 操作最大滑点 0.5%
 
-### x402 Payment Tiers
+### x402 支付层级
 
-| Product | Price | Settlement |
-|---------|-------|-----------|
-| Signal Query | 0.001 USDT | Async |
-| Strategy Subscribe | 0.01 USDT | Async |
-| Strategy Params Buy | 1.00 USDT | Sync |
-| NFT License | 5.00 USDT | Sync |
-
----
-
-## X Layer Ecosystem Positioning / 项目在 X Layer 生态中的定位
-
-Genesis Protocol is positioned as the **AI strategy infrastructure layer** for X Layer's DeFi ecosystem:
-
-- **For LPs**: Autonomous management of Uniswap V4 concentrated liquidity positions with AI-optimized hook configurations -- no manual parameter tuning required.
-- **For Traders**: MEV protection and dynamic fees that adapt to real-time market conditions, creating fairer trading environments.
-- **For Developers**: Open hook module system -- new `IGenesisModule` implementations can be plugged into the Assembler without modifying core contracts.
-- **For the X Layer Ecosystem**: Demonstrates that AI agents can operate as first-class citizens on X Layer, leveraging zero gas fees (USDG/USDT), 1-second block times, and the OnchainOS skill ecosystem to deliver autonomous DeFi infrastructure.
-
-Genesis leverages X Layer's unique advantages:
-- **Zero gas with USDG/USDT** -- AI agent can make frequent on-chain decisions without cost concerns
-- **1s block time** -- Enables real-time MEV detection and rapid rebalance execution
-- **OnchainOS native** -- Deep integration with wallet, market, trade, and payment skills
-- **OKX ecosystem** -- Access to OKX liquidity and user base via X Layer bridge
+| 产品 | 价格 | 结算方式 |
+|------|------|---------|
+| 信号查询 | 0.001 USDT | 异步 |
+| 策略订阅 | 0.01 USDT | 异步 |
+| 策略参数购买 | 1.00 USDT | 同步 |
+| NFT 授权 | 5.00 USDT | 同步 |
 
 ---
 
-## Demo
+## 项目在 X Layer 生态中的定位
 
-### Run the Cognitive Cycle Demo
+Genesis Protocol 定位为 X Layer DeFi 生态的 **AI 策略基础设施层**：
+
+- **面向 LP**：自主管理 Uniswap V4 集中流动性头寸，AI 优化 Hook 配置 -- 无需手动调参
+- **面向交易者**：MEV 防护和动态费率实时适应市场状况，创建更公平的交易环境
+- **面向开发者**：开放 Hook 模块系统 -- 新的 `IGenesisModule` 实现可直接接入 Assembler，无需修改核心合约
+- **面向 X Layer 生态**：展示 AI Agent 可作为 X Layer 上的一等公民运行，利用零 Gas 费（USDG/USDT）、1 秒出块和 OnchainOS Skill 生态，交付自主 DeFi 基础设施
+
+Genesis 充分利用 X Layer 独特优势：
+- **USDG/USDT 零 Gas** -- AI Agent 可高频进行链上决策而无成本顾虑
+- **1 秒出块** -- 实现实时 MEV 检测和快速再平衡执行
+- **OnchainOS 原生** -- 深度集成钱包、市场、交易和支付 Skill
+- **OKX 生态** -- 通过 X Layer 桥接访问 OKX 流动性和用户群
+
+---
+
+## 演示
+
+### 运行认知循环演示
 
 ```bash
 python3 demo.py
@@ -235,176 +236,182 @@ python3 demo.py
 
 [![Genesis Protocol Demo](https://asciinema.org/a/eb4XTEwMtod594xz.svg)](https://asciinema.org/a/eb4XTEwMtod594xz)
 
-> Recording also saved as [`docs/demo.cast`](docs/demo.cast) -- play locally with `asciinema play docs/demo.cast`
+> 录制文件保存在 [`docs/demo.cast`](docs/demo.cast) -- 本地播放: `asciinema play docs/demo.cast`
 
-The demo connects to X Layer Testnet to read live chain state, then simulates a complete AI agent lifecycle:
+演示连接 X Layer 测试网读取实时链上状态，然后模拟完整的 AI Agent 生命周期：
 
-- **Layer 1 Perception** -- Fetches market prices, wallet balances, strategy states
-- **Layer 2 Analysis** -- Computes volatility, classifies market regime
-- **Layer 3 Planning** -- Generates action plan with confidence scoring
-- **Layer 4 Evolution** -- Reviews performance, adjusts internal parameters
-- **Layer 5 Meta-Cognition** -- Self-assessment, bias detection
-- **NFT Check** -- Evaluates mint eligibility and mints Strategy NFT
+- **第 1 层 感知** -- 获取市场价格、钱包余额、策略状态
+- **第 2 层 分析** -- 计算波动率、分类市场区间
+- **第 3 层 规划** -- 生成带置信度评分的行动计划
+- **第 4 层 进化** -- 审视表现、调整内部参数
+- **第 5 层 元认知** -- 自我评估、偏差检测
+- **NFT 检查** -- 评估铸造资格并铸造策略 NFT
 
-### On-Chain Activity (X Layer Testnet)
+### 链上活动（X Layer 测试网）
 
-| Metric | Value |
-|--------|-------|
-| Strategies created | 6 |
-| Decision journal entries | 61 |
-| Swaps processed | 11 |
-| Strategy NFTs minted | 2 |
-| Autonomous agent cycles | 3 (with parameter evolution) |
-| Total transactions | 90+ |
+| 指标 | 数值 |
+|------|------|
+| 已创建策略 | 6 |
+| 决策日志条目 | 61 |
+| 处理 Swap | 11 |
+| 铸造策略 NFT | 2 |
+| 自主 Agent 循环 | 3（含参数进化） |
+| 总交易数 | 90+ |
 
 ---
 
-## Agent Interaction Example
+## Agent 交互示例
 
-Genesis is designed as a **Skill** for AI agents. Here's how an agent interacts with Genesis through natural language:
+Genesis 设计为 AI Agent 的 **Skill**。以下是 Agent 通过自然语言与 Genesis 交互的示例：
 
 ```
-User: "The market looks volatile today. What should we do?"
+用户: "今天市场看起来很波动，我们应该怎么做？"
 
-Agent: Let me check the current market conditions.
+Agent: 让我查看当前市场状况。
 > genesis market
 
-  ETH/USDC: $2,450  vol=5.8%  trend=volatile
-  OKB/USDT: $48.50  vol=4.2%  trend=sideways
+  ETH/USDC: $2,450  波动率=5.8%  趋势=volatile
+  OKB/USDT: $48.50  波动率=4.2%  趋势=sideways
 
-  Recommended regime: volatile_defender
-  Confidence: 0.87
+  推荐区间: volatile_defender
+  置信度: 0.87
 
-The volatility is elevated. I recommend switching to the volatile_defender
-preset which activates all three modules including MEV protection.
+波动率偏高。我建议切换到 volatile_defender 预设，
+激活所有三个模块，包括 MEV 防护。
 
 > genesis create-strategy volatile_defender
 
-  Strategy #1 created with modules:
-  - DynamicFeeModule (fee range: 0.10% - 1.50%)
-  - MEVProtectionModule (blocking enabled)
-  - AutoRebalanceModule (70% trigger, 120s cooldown)
+  策略 #1 已创建，包含模块:
+  - DynamicFeeModule (费率范围: 0.10% - 1.50%)
+  - MEVProtectionModule (阻断已启用)
+  - AutoRebalanceModule (70% 触发, 120秒冷却)
 
-  Decision logged: STRATEGY_CREATE (on-chain confirmed)
+  决策已记录: STRATEGY_CREATE (链上已确认)
 
-User: "How is our existing strategy performing?"
+用户: "现有策略表现如何？"
 
 Agent: > genesis status
 
-  Strategy #0: calm_accumulator
-  - P&L: +1.5% (150 bps)
-  - Swaps: 128 processed
-  - Runtime: 72 hours
-  - NFT eligible: Yes
+  策略 #0: calm_accumulator
+  - P&L: +1.5% (150 基点)
+  - Swap: 已处理 128 笔
+  - 运行时长: 72 小时
+  - NFT 资格: 符合
 
-  Strategy #1: volatile_defender
-  - P&L: 0% (just created)
-  - Swaps: 0
-  - Runtime: 0 hours
+  策略 #1: volatile_defender
+  - P&L: 0% (刚创建)
+  - Swap: 0
+  - 运行时长: 0 小时
 
-User: "Mint the NFT for strategy 0."
+用户: "为策略 0 铸造 NFT。"
 
 Agent: > genesis mint-nft 0
 
-  All thresholds met (P&L >= 1%, Swaps >= 50, Runtime >= 48h)
-  Minting Strategy NFT...
+  所有阈值已满足 (P&L >= 1%, Swap >= 50, 运行时长 >= 48h)
+  正在铸造策略 NFT...
 
   Token ID: 0
-  Contract: 0xd969448dfc24Fe3Aff25e86db338fAB41b104319
-  Metadata: on-chain (modules, params, P&L, market state)
-  NFT minted successfully!
+  合约: 0xd969448dfc24Fe3Aff25e86db338fAB41b104319
+  元数据: 链上 (模块、参数、P&L、市场状态)
+  NFT 铸造成功!
 ```
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 genesis-protocol/
 ├── .github/workflows/ci.yml          GitHub Actions CI
-├── contracts/                         Solidity (Foundry)
+├── contracts/                         Solidity 合约 (Foundry)
 │   ├── src/
-│   │   ├── IGenesisModule.sol         Module interface
-│   │   ├── GenesisHookAssembler.sol   Core meta-hook factory
-│   │   ├── GenesisV4Hook.sol          Real V4 IHooks implementation
-│   │   ├── StrategyNFT.sol            ERC-721 with on-chain metadata
+│   │   ├── IGenesisModule.sol         模块接口
+│   │   ├── GenesisHookAssembler.sol   核心元 Hook 工厂
+│   │   ├── GenesisV4Hook.sol          真实 V4 IHooks 实现
+│   │   ├── HookDeployer.sol           CREATE2 Hook 部署工厂
+│   │   ├── StrategyNFT.sol            链上元数据 ERC-721
 │   │   └── modules/
-│   │       ├── DynamicFeeModule.sol   Volatility-responsive fees
-│   │       ├── MEVProtectionModule.sol Sandwich attack detection
-│   │       └── AutoRebalanceModule.sol IL-aware position management
-│   ├── script/Deploy.sol              Deployment script
-│   └── test/GenesisTest.sol           40 tests, all passing
+│   │       ├── DynamicFeeModule.sol   波动率响应费率
+│   │       ├── MEVProtectionModule.sol 三明治攻击检测
+│   │       └── AutoRebalanceModule.sol IL 感知头寸管理
+│   ├── script/
+│   │   ├── Deploy.sol                 部署脚本
+│   │   └── V4Swap.sol                 V4 Swap 全流程脚本
+│   └── test/GenesisTest.sol           43 个测试，全部通过
 │
 ├── skills/genesis/                    AI Agent Skill
-│   ├── SKILL.md                       Skill definition
-│   ├── plugin.yaml                    Plugin manifest
+│   ├── SKILL.md                       Skill 定义
+│   ├── plugin.yaml                    插件清单
 │   └── scripts/
-│       ├── config.py                  Configuration & safety defaults
-│       ├── genesis_engine.py          5-layer AI cognitive engine
-│       ├── market_oracle.py           Market data via OnchainOS
-│       ├── wallet_manager.py          Multi sub-wallet management
-│       ├── hook_assembler.py          Hook Template Engine
-│       ├── strategy_manager.py        Strategy lifecycle
-│       ├── decision_journal.py        On-chain + local decision log
-│       ├── nft_minter.py             Strategy NFT minting
-│       ├── payment_handler.py        x402 payments + pay-with-any-token
-│       └── main.py                    CLI entry point
+│       ├── config.py                  配置和安全默认值
+│       ├── genesis_engine.py          5 层 AI 认知引擎
+│       ├── market_oracle.py           通过 OnchainOS 获取市场数据
+│       ├── wallet_manager.py          多子钱包管理
+│       ├── hook_assembler.py          Hook 模板引擎
+│       ├── strategy_manager.py        策略生命周期
+│       ├── decision_journal.py        链上 + 本地决策日志
+│       ├── nft_minter.py             策略 NFT 铸造
+│       ├── payment_handler.py        x402 支付 + 任意代币支付
+│       ├── security_scanner.py       代币安全扫描
+│       └── main.py                    CLI 入口
 │
 ├── scripts/
-│   ├── generate_chain_activity.py    Automated chain activity generator
-│   ├── autonomous_agent_cycle.py     Real autonomous cognitive cycle (3 cycles)
-│   └── mine_hook_address.py          CREATE2 address mining for V4 hook flags
+│   ├── generate_chain_activity.py    自动化链上活动生成器
+│   ├── autonomous_agent_cycle.py     真实自主认知循环 (3 轮)
+│   ├── execute_v4_swap.py            V4 Swap 执行脚本
+│   └── mine_hook_address.py          CREATE2 地址挖矿
 │
-└── tests/                             Python test suite
-    ├── test_config.py                 Safety defaults & structure validation
-    ├── test_decision_journal.py       Decision logging & hash computation
-    ├── test_nft_minter.py            NFT eligibility checks
-    └── test_market_oracle.py         Market analytics functions
+└── tests/                             Python 测试套件 (41 个测试)
+    ├── test_config.py                 安全默认值和结构验证
+    ├── test_decision_journal.py       决策日志和哈希计算
+    ├── test_nft_minter.py            NFT 资格检查
+    ├── test_market_oracle.py         市场分析函数
+    └── test_security_scanner.py      安全扫描器测试
 ```
 
 ---
 
-## How to Run
+## 如何运行
 
-### Prerequisites
+### 前置要求
 
 - [Foundry](https://book.getfoundry.sh/) (Solc 0.8.26)
 - Python 3.10+
 - [OnchainOS CLI](https://docs.okx.com/onchainos)
 
-### Build & Test Solidity
+### 编译和测试 Solidity
 
 ```bash
 cd contracts
-forge install Uniswap/v4-core --no-git  # Already installed
+forge install Uniswap/v4-core --no-git  # 已安装
 forge install foundry-rs/forge-std --no-git
 forge build
-forge test -vv  # 43 tests pass
+forge test -vv  # 43 个测试全部通过
 ```
 
-### Run Python Tests
+### 运行 Python 测试
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -v
+python -m pytest tests/ -v  # 41 个测试全部通过
 ```
 
-### Run the Demo
+### 运行演示
 
 ```bash
 python3 demo.py
 ```
 
-### Deploy to X Layer
+### 部署到 X Layer
 
 ```bash
 cd contracts
 forge script script/Deploy.sol --rpc-url https://rpc.xlayer.tech --broadcast
 ```
 
-### Environment Setup
+### 环境配置
 
-Copy the example env file and fill in your keys:
+复制示例 env 文件并填入密钥：
 
 ```bash
 cp .env.example .env
@@ -412,14 +419,14 @@ cp .env.example .env
 
 ---
 
-## Team / 团队成员
+## 团队
 
-| Member | Role |
-|--------|------|
-| **0xCaptain888** | Solo developer -- smart contracts, AI engine, integrations, frontend |
+| 成员 | 角色 |
+|------|------|
+| **0xCaptain888** | 独立开发者 -- 智能合约、AI 引擎、集成、前端 |
 
 ---
 
-## License
+## 许可证
 
 MIT
