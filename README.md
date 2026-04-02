@@ -29,6 +29,8 @@ python3 demo.py
 
 [![Genesis Protocol Demo](https://asciinema.org/a/eb4XTEwMtod594xz.svg)](https://asciinema.org/a/eb4XTEwMtod594xz)
 
+> Recording also saved as [`docs/demo.cast`](docs/demo.cast) — play locally with `asciinema play docs/demo.cast`
+
 The demo connects to X Layer Testnet to read live chain state, then simulates a complete AI agent lifecycle:
 
 - **Layer 1 Perception** — Fetches market prices, wallet balances, strategy states

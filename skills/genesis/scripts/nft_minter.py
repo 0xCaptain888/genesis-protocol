@@ -7,7 +7,7 @@ import logging
 import time
 import hashlib
 
-from config import (
+from .config import (
     DRY_RUN, LOG_LEVEL,
     NFT_MINT_THRESHOLD_PNL_BPS, NFT_MINT_THRESHOLD_SWAPS,
     NFT_MINT_THRESHOLD_HOURS, CONTRACTS,
