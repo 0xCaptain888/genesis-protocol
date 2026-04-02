@@ -1,6 +1,10 @@
-"""Onchain OS REST API Client - stdlib-only alternative to subprocess CLI calls.
+"""Onchain OS REST API Client - Market data + DEX aggregator integration.
 
-Uses urllib.request with HMAC-SHA256 authentication per OKX Web3 API docs.
+Uses requests with HMAC-SHA256 authentication per OKX API docs.
+Supports two base URLs:
+  - Market/Public API: https://www.okx.com  (account-level API key)
+  - DEX/Web3 API:     https://web3.okx.com  (project-level API key)
+
 Falls back to onchainos CLI subprocess when the REST API is unavailable.
 
 Credentials loaded from environment variables:
@@ -13,18 +17,26 @@ import json
 import logging
 import os
 import subprocess
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
+
+try:
+    import requests as _requests
+except ImportError:
+    _requests = None
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://web3.okx.com"
+MARKET_BASE_URL = "https://www.okx.com"
 
 
 class OnchainOSAPI:
-    """REST API client for Onchain OS with CLI fallback."""
+    """REST API client for Onchain OS with CLI fallback.
+
+    Integrates both OKX Market API (price, candles, orderbook, funding)
+    and OKX DEX Aggregator API (quote, swap, tokens) for the Genesis
+    Protocol perception and trade execution layers.
+    """
 
     def __init__(
         self,
@@ -32,12 +44,14 @@ class OnchainOSAPI:
         api_secret: str = "",
         passphrase: str = "",
         base_url: str = BASE_URL,
+        market_base_url: str = MARKET_BASE_URL,
         timeout: int = 30,
     ):
         self.api_key = api_key or os.environ.get("OK_ACCESS_KEY", "")
         self.api_secret = api_secret or os.environ.get("OK_ACCESS_SECRET", "")
         self.passphrase = passphrase or os.environ.get("OK_ACCESS_PASSPHRASE", "")
         self.base_url = base_url.rstrip("/")
+        self.market_base_url = market_base_url.rstrip("/")
         self.timeout = timeout
         self._has_credentials = bool(self.api_key and self.api_secret and self.passphrase)
         if not self._has_credentials:
@@ -69,36 +83,32 @@ class OnchainOSAPI:
     # ── Low-level request helpers ─────────────────────────────────────────
 
     def _request(self, method: str, path: str, params: dict | None = None, body: dict | None = None) -> dict | None:
-        """Execute an authenticated REST request. Returns parsed JSON or None."""
+        """Execute an authenticated REST request via requests lib. Returns parsed JSON or None."""
         if not self._has_credentials:
             logger.debug("No credentials; skipping REST request %s %s", method, path)
+            return None
+        if _requests is None:
+            logger.error("requests library not installed")
             return None
 
         request_path = path
         if params:
-            request_path = path + "?" + urllib.parse.urlencode(params)
+            qs = "&".join(f"{k}={v}" for k, v in params.items())
+            request_path = path + "?" + qs
 
         body_str = json.dumps(body) if body else ""
         headers = self._sign(method.upper(), request_path, body_str)
-
         url = self.base_url + request_path
 
         try:
-            req = urllib.request.Request(
-                url,
-                data=body_str.encode("utf-8") if body_str else None,
-                headers=headers,
-                method=method.upper(),
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                logger.debug("REST %s %s -> %s", method, path, data.get("code", "ok"))
-                return data
-        except urllib.error.HTTPError as exc:
-            logger.error("REST HTTP %d for %s %s: %s", exc.code, method, path, exc.reason)
-        except urllib.error.URLError as exc:
-            logger.error("REST URL error for %s %s: %s", method, path, exc.reason)
-        except (json.JSONDecodeError, OSError) as exc:
+            if method.upper() == "GET":
+                resp = _requests.get(url, headers=headers, timeout=self.timeout)
+            else:
+                resp = _requests.post(url, headers=headers, data=body_str, timeout=self.timeout)
+            data = resp.json()
+            logger.debug("REST %s %s -> %s", method, path, data.get("code", "ok"))
+            return data
+        except Exception as exc:
             logger.error("REST error for %s %s: %s", method, path, exc)
         return None
 
@@ -127,6 +137,133 @@ class OnchainOSAPI:
             return result
         logger.info("REST unavailable for %s; falling back to CLI", path)
         return self._cli_fallback(cli_cmd)
+
+    def _market_request(self, path: str, params: dict | None = None) -> dict | None:
+        """Execute an authenticated GET against the Market API (www.okx.com).
+
+        Uses the same HMAC-SHA256 auth as the DEX API but against the
+        standard OKX Market API base URL. Works with account-level API keys.
+        """
+        if not self._has_credentials:
+            logger.debug("No credentials; skipping market request %s", path)
+            return None
+        if _requests is None:
+            logger.error("requests library not installed")
+            return None
+
+        request_path = path
+        if params:
+            qs = "&".join(f"{k}={v}" for k, v in params.items())
+            request_path = path + "?" + qs
+
+        headers = self._sign("GET", request_path)
+        url = self.market_base_url + request_path
+
+        try:
+            resp = _requests.get(url, headers=headers, timeout=self.timeout)
+            data = resp.json()
+            if data.get("code") == "0":
+                logger.debug("Market GET %s -> OK (%d items)", path,
+                             len(data.get("data", [])))
+            else:
+                logger.error("Market GET %s -> code=%s msg=%s",
+                             path, data.get("code"), data.get("msg"))
+            return data
+        except Exception as exc:
+            logger.error("Market error for %s: %s", path, exc)
+        return None
+
+    # ── Market Data Endpoints (Perception Layer) ───────────────────────────
+
+    def get_ticker(self, inst_id: str = "ETH-USDT") -> dict | None:
+        """GET real-time ticker for a trading pair.
+
+        Used by the Perception Layer to feed live price data into the
+        Genesis Engine for volatility calculation and regime detection.
+
+        Returns: {code, data: [{last, open24h, high24h, low24h, vol24h, ...}]}
+        """
+        return self._market_request(
+            "/api/v5/market/ticker", {"instId": inst_id}
+        )
+
+    def get_candles(self, inst_id: str = "ETH-USDT", bar: str = "1H",
+                    limit: int = 20) -> dict | None:
+        """GET historical candlestick data for volatility calculation.
+
+        Used by the Analysis Layer to compute rolling volatility, detect
+        trends, and classify market regime (calm/volatile/trending).
+
+        Returns: {code, data: [[ts, open, high, low, close, vol, ...], ...]}
+        """
+        return self._market_request(
+            "/api/v5/market/candles",
+            {"instId": inst_id, "bar": bar, "limit": str(limit)},
+        )
+
+    def get_orderbook(self, inst_id: str = "ETH-USDT", depth: int = 5) -> dict | None:
+        """GET orderbook depth for spread and liquidity analysis.
+
+        Used by the MEV Protection Module to assess liquidity conditions
+        and detect potential sandwich attack setups.
+
+        Returns: {code, data: [{asks: [[price, qty, ...]], bids: [...]}]}
+        """
+        return self._market_request(
+            "/api/v5/market/books",
+            {"instId": inst_id, "sz": str(depth)},
+        )
+
+    def get_funding_rate(self, inst_id: str = "ETH-USDT-SWAP") -> dict | None:
+        """GET current funding rate for a perpetual swap.
+
+        Used by the Analysis Layer to gauge market sentiment and directional
+        bias, which feeds into the DynamicFee Module's fee adjustment.
+
+        Returns: {code, data: [{fundingRate, nextFundingRate, fundingTime, ...}]}
+        """
+        return self._market_request(
+            "/api/v5/public/funding-rate", {"instId": inst_id}
+        )
+
+    def get_mark_price(self, inst_id: str = "ETH-USDT-SWAP") -> dict | None:
+        """GET mark price for a derivatives instrument.
+
+        Returns: {code, data: [{instId, markPx, ts}]}
+        """
+        return self._market_request(
+            "/api/v5/public/mark-price",
+            {"instType": "SWAP", "instId": inst_id},
+        )
+
+    def compute_volatility(self, inst_id: str = "ETH-USDT", bar: str = "1H",
+                           limit: int = 20) -> dict | None:
+        """Fetch candles and compute rolling volatility (std/mean of closes).
+
+        This is the primary data feed for the DynamicFee Module's fee curve.
+        Returns dict with volatility_pct, avg_price, std_dev, candle_count.
+        """
+        candles_resp = self.get_candles(inst_id, bar, limit)
+        if not candles_resp or candles_resp.get("code") != "0":
+            return None
+
+        closes = [float(c[4]) for c in candles_resp["data"]]
+        if len(closes) < 2:
+            return None
+
+        avg = sum(closes) / len(closes)
+        std = (sum((p - avg) ** 2 for p in closes) / len(closes)) ** 0.5
+        vol_pct = (std / avg) * 100
+
+        return {
+            "inst_id": inst_id,
+            "bar": bar,
+            "candle_count": len(closes),
+            "avg_price": round(avg, 4),
+            "std_dev": round(std, 4),
+            "volatility_pct": round(vol_pct, 4),
+            "latest_close": closes[0],
+        }
 
     # ── Market Endpoints ──────────────────────────────────────────────────
 
