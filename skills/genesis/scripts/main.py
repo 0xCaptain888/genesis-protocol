@@ -33,6 +33,7 @@ from .strategy_manager import StrategyManager
 from .decision_journal import DecisionJournal
 from .hook_assembler import HookAssembler
 from .nft_minter import NFTMinter
+from .payment_handler import PaymentHandler
 
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL, logging.INFO),
@@ -227,6 +228,38 @@ def cmd_x402_pricing():
         print(f"  {service:25s}  {pricing['amount']} {pricing['token']}  ({pricing['settle']})")
 
 
+def cmd_x402_pay(product=None, token=None, payer=None):
+    """Process an x402 payment with optional token swap via pay-with-any-token."""
+    if not product:
+        print("Usage: x402 pay <product> <token> <payer_address>")
+        print(f"Products: {', '.join(config.X402_PRICING.keys())}")
+        return
+
+    handler = PaymentHandler()
+
+    if not token or token.upper() == "USDT":
+        # Direct USDT payment
+        print(f"Processing x402 payment for '{product}' with USDT...")
+        result = handler.process_payment(product, "USDT", payer or "")
+    else:
+        # Need swap via pay-with-any-token
+        print(f"Processing x402 payment for '{product}'...")
+        print(f"  Swapping {token} → USDT via pay-with-any-token (Uniswap V4)")
+        estimate = handler.estimate_swap(token, product)
+        if estimate.get("swap_needed"):
+            print(f"  Estimated input: {estimate.get('amount', '?')} {token}")
+        result = handler.process_payment(product, token, payer or "")
+
+    if result.get("success"):
+        print(f"  ✓ Payment settled: {result.get('amount_usdt')} USDT")
+        if result.get("swap_details"):
+            sd = result["swap_details"]
+            print(f"  ✓ Swapped: {sd.get('from_amount', '?')} {sd.get('from_token')} → {sd.get('to_amount')} USDT")
+        print(f"  TX: {result.get('tx_hash', 'N/A')}")
+    else:
+        print(f"  ✗ Payment failed: {result.get('error', 'unknown')}")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -247,7 +280,7 @@ def main():
         "journal": lambda: cmd_journal(args[0] if args else None),
         "market": lambda: cmd_market(),
         "config": lambda: cmd_config_show() if not args or args[0] == "show" else print("Usage: config show"),
-        "x402": lambda: cmd_x402_pricing() if args and args[0] == "pricing" else print("Usage: x402 pricing"),
+        "x402": lambda: cmd_x402_pricing() if args and args[0] == "pricing" else (cmd_x402_pay(args[1] if len(args) > 1 else None, args[2] if len(args) > 2 else None, args[3] if len(args) > 3 else None) if args and args[0] == "pay" else print("Usage: x402 pricing | x402 pay <product> <token> <payer>")),
     }
 
     if cmd in commands:

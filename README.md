@@ -16,7 +16,7 @@ Genesis is an AI Agent Skill that autonomously generates, deploys, and manages c
 - **5-Layer AI Cognitive Architecture** — Perception → Analysis → Planning → Evolution → Meta-Cognition
 - **Strategy NFTs** — Proven strategies minted as ERC-721 with full on-chain metadata
 - **On-Chain Decision Journal** — Every AI decision logged with reasoning hashes for full auditability
-- **x402 Payment Monetization** — Signal queries, strategy subscriptions, parameter purchases, NFT licensing
+- **x402 Payment Monetization** — Signal queries, strategy subscriptions, parameter purchases, NFT licensing. **Pay with any token** via Uniswap auto-swap.
 - **X Layer Native** — Zero gas fees with USDG/USDT, ~$0.0005/tx, 1s block time
 
 ## Demo
@@ -170,6 +170,7 @@ genesis/
         ├── strategy_manager.py         Strategy lifecycle
         ├── decision_journal.py         On-chain + local decision log
         ├── nft_minter.py              Strategy NFT minting
+        ├── payment_handler.py         x402 payments + pay-with-any-token
         └── main.py                     CLI entry point
 ```
 
@@ -267,6 +268,7 @@ forge script script/Deploy.sol --rpc-url https://rpc.xlayer.tech --broadcast
 | **OnchainOS Market** | Real-time price feeds for perception layer |
 | **OnchainOS Payment** | x402 protocol for strategy monetization |
 | **Uniswap V4 Hooks** | Composable hook modules via GenesisHookAssembler |
+| **Uniswap pay-with-any-token** | Accept x402 payments in any ERC-20, auto-swap to USDT |
 | **X Layer** | EVM L2, chainId 196, zero gas with USDG/USDT |
 
 ## License

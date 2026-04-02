@@ -14,6 +14,7 @@ import json
 import random
 import hashlib
 import sys
+import subprocess
 
 # ─── ANSI Colors ────────────────────────────────────────────────────────────
 C = {
@@ -64,6 +65,56 @@ CONTRACTS = {
     "strategy_nft": "0xd969448dfc24Fe3Aff25e86db338fAB41b104319",
 }
 
+# ─── Live Chain Data ─────────────────────────────────────────────────────────
+XLAYER_RPC = "https://testrpc.xlayer.tech"
+
+def read_chain_data():
+    """Read real on-chain state from X Layer Testnet via cast call."""
+    chain_data = {
+        "strategy_count": None,
+        "decision_count": None,
+        "nft_supply": None,
+        "total_swaps": None,
+    }
+
+    calls = {
+        "strategy_count": {
+            "to": CONTRACTS["assembler"],
+            "sig": "strategyCount()(uint256)",
+        },
+        "decision_count": {
+            "to": CONTRACTS["assembler"],
+            "sig": "decisionCount()(uint256)",
+        },
+        "nft_supply": {
+            "to": CONTRACTS["strategy_nft"],
+            "sig": "totalSupply()(uint256)",
+        },
+        "total_swaps": {
+            "to": CONTRACTS["assembler"],
+            "sig": "totalSwapsProcessed()(uint256)",
+        },
+    }
+
+    for key, call in calls.items():
+        try:
+            proc = subprocess.run(
+                ["cast", "call", call["to"], call["sig"],
+                 "--rpc-url", XLAYER_RPC],
+                capture_output=True, text=True, timeout=10,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                val = proc.stdout.strip()
+                # cast may return hex or decimal
+                if val.startswith("0x"):
+                    chain_data[key] = int(val, 16)
+                else:
+                    chain_data[key] = int(val)
+        except Exception:
+            pass  # Fallback to None, demo will use defaults
+
+    return chain_data
+
 # ─── Decision Journal ───────────────────────────────────────────────────────
 journal = []
 
@@ -106,8 +157,14 @@ def perceive():
 
     log("Perception", "Checking active strategies on-chain...")
     progress_bar("cast call strategyCount", 0.3)
-    log("Perception", f"  Active strategies: {styled('1', 'green')}")
-    log("Perception", f"  Total swaps processed: {styled('128', 'cyan')}")
+
+    # Read live chain state
+    chain = read_chain_data()
+    sc = chain["strategy_count"] if chain["strategy_count"] is not None else 1
+    sw = chain["total_swaps"] if chain["total_swaps"] is not None else 128
+    src = styled("live", "green") if chain["strategy_count"] is not None else styled("cached", "yellow")
+    log("Perception", f"  Active strategies: {styled(str(sc), 'green')} ({src})")
+    log("Perception", f"  Total swaps processed: {styled(str(sw), 'cyan')}")
     log("Perception", f"  Total volume: {styled('42.3 ETH', 'cyan')}")
 
     return world
@@ -304,13 +361,33 @@ def main():
     ╚═══════════════════════════════════════════════════════════╝
     """, "cyan"))
 
-    print(styled("  Configuration:", "bold"))
+    # Fetch live chain data
+    print(styled("  Connecting to X Layer Testnet (Chain 1952)...", "dim"))
+    chain = read_chain_data()
+    has_live = any(v is not None for v in chain.values())
+
+    if has_live:
+        print(styled("  ✓ Live chain data loaded from testrpc.xlayer.tech", "green"))
+    else:
+        print(styled("  ⚠ Chain RPC unavailable — using cached data", "yellow"))
+
+    # Use live data with fallbacks
+    strategy_count = chain["strategy_count"] if chain["strategy_count"] is not None else 1
+    decision_count = chain["decision_count"] if chain["decision_count"] is not None else 5
+    nft_supply = chain["nft_supply"] if chain["nft_supply"] is not None else 1
+    total_swaps = chain["total_swaps"] if chain["total_swaps"] is not None else 2
+
+    print(styled("\n  Configuration:", "bold"))
     print(f"    Chain:      X Layer Testnet (1952)")
-    print(f"    Mode:       {styled('DEMO (simulated)', 'yellow')}")
+    print(f"    Mode:       {styled('DEMO (simulated + live chain state)', 'yellow')}")
     print(f"    Assembler:  {styled(CONTRACTS['assembler'], 'dim')}")
     print(f"    Modules:    3 registered (DynamicFee, MEVProtection, AutoRebalance)")
-    print(f"    Strategies: 1 active")
-    print(f"    NFTs:       1 minted")
+    data_source = styled("LIVE", "green") if has_live else styled("CACHED", "yellow")
+    print(f"    Data:       {data_source}")
+    print(f"    Strategies: {styled(str(strategy_count), 'cyan')} on-chain")
+    print(f"    Decisions:  {styled(str(decision_count), 'cyan')} journal entries")
+    print(f"    NFTs:       {styled(str(nft_supply), 'cyan')} minted")
+    print(f"    Swaps:      {styled(str(total_swaps), 'cyan')} processed")
     time.sleep(0.5)
 
     # Run full cognitive cycle

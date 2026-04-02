@@ -18,6 +18,7 @@ dependencies:
   - onchainos-payment
   - uniswap-hooks
   - uniswap-trading
+  - pay-with-any-token
 ---
 
 # Genesis Protocol
@@ -58,6 +59,7 @@ Genesis operates across two layers that coordinate through a shared decision jou
 | `wallet_manager.py` | Manages the agentic wallet hierarchy (master, strategy, income, reserve, rebalance) via `onchainos-wallet`. |
 | `decision_journal.py` | Records every AI decision both on-chain (via `DecisionJournal` contract) and locally. Supports 9 decision types from strategy creation to meta-cognition. |
 | `nft_minter.py` | Evaluates strategy eligibility against NFT minting thresholds and mints `StrategyNFT` tokens for qualifying strategies. |
+| `payment_handler.py` | Processes x402 payments with automatic token swap via `pay-with-any-token` Uniswap skill. Accepts any ERC-20 token and auto-swaps to USDT before settlement. |
 | `config.py` | Central configuration file. All tunable parameters, safety defaults, chain settings, pricing tiers, and contract addresses. |
 
 ### Interaction Flow
@@ -296,6 +298,22 @@ Genesis monetizes its intelligence through the x402 payment protocol, allowing e
 ### Revenue Flow
 
 All x402 payments are received by the **income wallet** (wallet index 2). The `onchainos-payment` dependency handles payment verification and settlement. Revenue is tracked in the decision journal under decision type `FUND_TRANSFER` (0x05).
+
+### Pay with Any Token
+
+Genesis integrates the `pay-with-any-token` Uniswap skill to accept payments in any ERC-20 token. When a payer uses a non-USDT token:
+
+1. The `PaymentHandler` calls `pay-with-any-token` with `exactOutput` to determine the required input amount
+2. The skill routes through Uniswap V4 to swap the payer's token to USDT
+3. The exact USDT amount is delivered to the income wallet
+4. The x402 payment is settled normally
+
+This removes friction for agents and users who hold OKB, ETH, USDC, or any other X Layer token — they can pay for Genesis services without manually acquiring USDT first.
+
+```
+genesis x402 pay signal_query OKB 0xPayerAddress
+genesis x402 pay strategy_subscribe ETH 0xPayerAddress
+```
 
 ### Configuration
 

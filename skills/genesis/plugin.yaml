@@ -32,6 +32,7 @@ dependencies:
     - onchainos-payment
     - uniswap-hooks
     - uniswap-trading
+    - pay-with-any-token
 
 chain:
   id: 196

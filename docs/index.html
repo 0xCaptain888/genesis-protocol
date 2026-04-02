@@ -194,7 +194,13 @@ canvas#particles{position:absolute;top:0;left:0;width:100%;height:100%;pointer-e
 <!-- Footer -->
 <footer class="text-center py-12 border-t border-gray-800">
 <div class="max-w-3xl mx-auto px-4 mb-8">
-<h3 class="font-display text-lg text-[var(--neon)] mb-4">X Layer 测试网部署</h3>
+<h3 class="font-display text-lg text-[var(--neon)] mb-4">X Layer 测试网部署 <span id="chain-status" class="text-xs text-gray-600 ml-2"></span></h3>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+<div class="card p-4 text-center"><p class="text-2xl font-black text-[var(--neon)] font-display" id="live-strategies">--</p><p class="text-xs text-gray-500 mt-1">链上策略</p></div>
+<div class="card p-4 text-center"><p class="text-2xl font-black text-[var(--neon2)] font-display" id="live-decisions">--</p><p class="text-xs text-gray-500 mt-1">决策日志</p></div>
+<div class="card p-4 text-center"><p class="text-2xl font-black text-green-400 font-display" id="live-swaps">--</p><p class="text-xs text-gray-500 mt-1">交易处理</p></div>
+<div class="card p-4 text-center"><p class="text-2xl font-black text-yellow-400 font-display" id="live-nfts">--</p><p class="text-xs text-gray-500 mt-1">NFT 铸造</p></div>
+</div>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-left">
 <div class="card p-3 flex justify-between"><span class="text-gray-500">GenesisHookAssembler</span><a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-[var(--neon)] hover:underline truncate ml-2">0xC5E851...C78</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">DynamicFeeModule</span><a href="https://www.oklink.com/xlayer-test/address/0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed" target="_blank" class="text-[var(--neon)] hover:underline truncate ml-2">0x277Ee5...4Ed</a></div>
@@ -264,6 +270,36 @@ rng.setOption({backgroundColor:'transparent',grid:{top:5,bottom:20,left:30,right
 
 // Resize charts
 window.addEventListener('resize',()=>{[radar,bar,fee,rng].forEach(c=>c.resize())});
+
+// ── Live Chain Data via X Layer RPC ──
+(async function fetchChainData(){
+const RPC='https://testrpc.xlayer.tech';
+const assembler='0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78';
+const nft='0xd969448dfc24Fe3Aff25e86db338fAB41b104319';
+// Precomputed function selectors (keccak256 first 4 bytes)
+const calls=[
+{id:'live-strategies',to:assembler,data:'0x22068b44'},
+{id:'live-decisions',to:assembler,data:'0x100b63cb'},
+{id:'live-swaps',to:assembler,data:'0x8b8dc8fa'},
+{id:'live-nfts',to:nft,data:'0x18160ddd'},
+];
+const status=document.getElementById('chain-status');
+let ok=0;
+for(const c of calls){
+try{
+const r=await fetch(RPC,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:c.to,data:c.data},'latest']})});
+const j=await r.json();
+if(j.result&&j.result!=='0x'&&j.result!=='0x0000000000000000000000000000000000000000000000000000000000000000'){
+const v=parseInt(j.result,16);
+document.getElementById(c.id).textContent=v;ok++;
+}else if(j.result){
+document.getElementById(c.id).textContent='0';ok++;
+}
+}catch(e){}
+}
+if(ok>0)status.innerHTML='<span style="color:#22c55e">● 已连接</span>';
+else status.innerHTML='<span style="color:#eab308">● 离线</span>';
+})();
 </script>
 </body>
 </html>
