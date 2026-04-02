@@ -255,11 +255,13 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 <h3 class="orb text-sm text-[var(--neon)] mb-6">Deployed Contracts (X Layer Testnet, Chain 1952)</h3>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs mb-8">
 <div class="card p-3 flex justify-between"><span class="text-gray-500">GenesisHookAssembler</span><a href="https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xC5E851...C78</a></div>
+<div class="card p-3 flex justify-between"><span class="text-gray-500">Assembler V2 (Swap Pipeline)</span><a href="https://www.oklink.com/xlayer-test/address/0x8da3b913362aa243BC89322Fe8012e70175B6D48" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x8da3b9...D48</a></div>
+<div class="card p-3 flex justify-between"><span class="text-gray-500">GenesisV4Hook</span><a href="https://www.oklink.com/xlayer-test/address/0x79a96bB2Ab2342cf6f1dD3c622F5CB01f9F7A8d4" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x79a96b...8d4</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">DynamicFeeModule</span><a href="https://www.oklink.com/xlayer-test/address/0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x277Ee5...4Ed</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">MEVProtectionModule</span><a href="https://www.oklink.com/xlayer-test/address/0xA4f6ABd6F77928b06F075637ccBACA8f89e17386" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xA4f6AB...386</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">AutoRebalanceModule</span><a href="https://www.oklink.com/xlayer-test/address/0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xe04E22...8ee</a></div>
 <div class="card p-3 flex justify-between"><span class="text-gray-500">StrategyNFT</span><a href="https://www.oklink.com/xlayer-test/address/0xd969448dfc24Fe3Aff25e86db338fAB41b104319" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0xd96944...319</a></div>
-<div class="card p-3 flex justify-between"><span class="text-gray-500">Uniswap V4 PoolManager</span><a href="https://www.oklink.com/xlayer-test/address/0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x360e68...B32</a></div>
+<div class="card p-3 flex justify-between"><span class="text-gray-500">Uniswap V4 PoolManager</span><a href="https://www.oklink.com/xlayer/address/0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32" target="_blank" class="text-[var(--neon)] hover:underline truncate-addr">0x360e68...B32</a></div>
 </div>
 <div class="flex flex-wrap gap-4 justify-center items-center mb-6">
 <span class="badge"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Powered by Onchain OS</span>
@@ -277,6 +279,7 @@ const CFG = {
   testChainId: 1952,
   mainChainId: 196,
   assembler: '0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78',
+  assemblerV2: '0x8da3b913362aa243BC89322Fe8012e70175B6D48',
   nft: '0xd969448dfc24Fe3Aff25e86db338fAB41b104319',
   dynamicFee: '0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed',
   mev: '0xA4f6ABd6F77928b06F075637ccBACA8f89e17386',
@@ -314,6 +317,7 @@ const MOD_NAMES = { [CFG.dynamicFee.toLowerCase()]:'DynamicFee', [CFG.mev.toLowe
 let provider = null, signer = null, assemblerC = null, nftC = null, connected = false;
 const rpcProvider = new ethers.JsonRpcProvider(CFG.testRpc);
 const rpcAssembler = new ethers.Contract(CFG.assembler, ASSEMBLER_ABI, rpcProvider);
+const rpcAssemblerV2 = new ethers.Contract(CFG.assemblerV2, ASSEMBLER_ABI, rpcProvider);
 const rpcNft = new ethers.Contract(CFG.nft, NFT_ABI, rpcProvider);
 
 // ── Wallet ──
@@ -356,23 +360,30 @@ async function connectWallet() {
 async function refreshDashboard() {
   const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   try {
-    const [sc, dc, sw, vol, dep, ns] = await Promise.allSettled([
+    // Fetch from both V1 and V2 assemblers and aggregate
+    const [sc, dc, sw, vol, dep, ns, sc2, sw2, vol2] = await Promise.allSettled([
       rpcAssembler.strategyCount(), rpcAssembler.decisionCount(),
       rpcAssembler.totalSwapsProcessed(), rpcAssembler.totalVolumeProcessed(),
-      rpcAssembler.assemblerDeployedAt(), rpcNft.totalSupply()
+      rpcAssembler.assemblerDeployedAt(), rpcNft.totalSupply(),
+      rpcAssemblerV2.strategyCount(),
+      rpcAssemblerV2.totalSwapsProcessed(), rpcAssemblerV2.totalVolumeProcessed()
     ]);
     const v = r => r.status==='fulfilled' ? r.value : null;
-    set('stat-strategies', v(sc)!==null ? Number(v(sc)) : '--');
+    // Aggregate: sum V1 + V2 for swaps and volume
+    const totalStrats = (v(sc)!==null?Number(v(sc)):0) + (v(sc2)!==null?Number(v(sc2)):0);
+    const totalSwaps = (v(sw)!==null?Number(v(sw)):0) + (v(sw2)!==null?Number(v(sw2)):0);
+    const totalVol = (v(vol)!==null?v(vol):0n) + (v(vol2)!==null?v(vol2):0n);
+    set('stat-strategies', totalStrats || '--');
     set('stat-decisions', v(dc)!==null ? Number(v(dc)) : '--');
-    set('stat-swaps', v(sw)!==null ? Number(v(sw)) : '--');
+    set('stat-swaps', totalSwaps || '--');
     set('stat-nfts', v(ns)!==null ? Number(v(ns)) : '--');
-    if(v(vol)!==null) set('stat-volume', ethers.formatEther(v(vol))+' ETH');
+    if(totalVol>0n) set('stat-volume', ethers.formatEther(totalVol)+' ETH');
     if(v(dep)!==null) { const d=new Date(Number(v(dep))*1000); set('stat-deployed', d.toLocaleDateString()+' '+d.toLocaleTimeString()); }
     // Update verified on-chain activity section
-    set('verified-strategies', v(sc)!==null ? Number(v(sc)) : '--');
+    set('verified-strategies', totalStrats || '--');
     set('verified-decisions', v(dc)!==null ? Number(v(dc)) : '--');
     set('verified-nfts', v(ns)!==null ? Number(v(ns)) : '--');
-    set('verified-swaps', v(sw)!==null ? Number(v(sw)) : '--');
+    set('verified-swaps', totalSwaps || '--');
     // Update charts with real data
     const volEth = v(vol)!==null ? parseFloat(ethers.formatEther(v(vol))) : null;
     refreshActivityChart(v(sc), v(dc), v(sw), v(ns), volEth);
