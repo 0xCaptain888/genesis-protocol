@@ -103,6 +103,8 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 | **MEVProtectionModule** | `0xA4f6ABd6F77928b06F075637ccBACA8f89e17386` |
 | **AutoRebalanceModule** | `0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee` |
 | **StrategyNFT** | `0xd969448dfc24Fe3Aff25e86db338fAB41b104319` |
+| **LiquidityShieldModule** | `0x34Bd6972F086c947e4503185e1A1094d9846b2aC` |
+| **OracleModule** | `0x30049511c4c483E9500A74701DED562A8F1ea86f` |
 | **GenesisHookAssembler (V2)** | `0x8da3b913362aa243BC89322Fe8012e70175B6D48` _(V4 Swap 测试用)_ |
 
 浏览器: [在 OKLink 查看](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V2 Assembler](https://www.oklink.com/xlayer-test/address/0x8da3b913362aa243BC89322Fe8012e70175B6D48)
@@ -130,6 +132,21 @@ forge script script/DeployMainnet.sol:DeployMainnet --rpc-url https://rpc.xlayer
 ## 代理钱包架构
 
 Genesis 通过 OnchainOS TEE 代理钱包使用 **5 子钱包架构**，隔离风险并强制职责分离：
+
+**Agentic Wallet 地址**: `0xd2D120eB7cEd38551cCeFb48021067d41D6542d3`
+
+### 快速设置
+
+```bash
+python3 scripts/setup_agentic_wallet.py
+```
+
+该脚本通过 OKX Web3 API (HMAC-SHA256 认证) 完成以下操作：
+1. 注册 Agentic Wallet 作为项目链上身份
+2. 创建 5 个角色子钱包（主控、策略、收入、储备、再平衡）
+3. 验证钱包注册状态
+
+### 子钱包角色
 
 | 索引 | 角色 | 用途 |
 |------|------|------|
@@ -408,6 +425,7 @@ genesis-protocol/
 │       └── main.py                    CLI 入口
 │
 ├── scripts/
+│   ├── setup_agentic_wallet.py       代理钱包 TEE 注册脚本
 │   ├── generate_chain_activity.py    自动化链上活动生成器
 │   ├── autonomous_agent_cycle.py     真实自主认知循环 (3 轮)
 │   ├── execute_v4_swap.py            V4 Swap 执行脚本

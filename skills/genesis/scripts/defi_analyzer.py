@@ -10,6 +10,7 @@ Reference: https://web3.okx.com/api (DeFi Invest endpoints)
 import json
 import logging
 import math
+import statistics
 import os
 import subprocess
 from typing import Optional
@@ -282,6 +283,317 @@ class DeFiAnalyzer:
             },
         }
 
+    # ── Deep Integration Methods ─────────────────────────────────────
+
+    def calculate_risk_adjusted_return(self, returns_series, risk_free_rate=0.04):
+        """Compute Sharpe, Sortino, and Calmar ratios from periodic returns.
+
+        Uses standard portfolio-theory formulas with annualization based on
+        the number of observations (assumed to be daily if len >= 30,
+        otherwise treated as the raw period count up to 252).
+
+        Args:
+            returns_series: List of periodic (e.g. daily) decimal returns
+                            such as [0.01, -0.005, 0.003, ...].
+            risk_free_rate: Annualized risk-free rate (default 4 %).
+
+        Returns:
+            dict with sharpe_ratio, sortino_ratio, calmar_ratio,
+            annualized_return, annualized_volatility, and max_drawdown.
+        """
+        if not returns_series or len(returns_series) < 2:
+            return {
+                "sharpe_ratio": 0.0,
+                "sortino_ratio": 0.0,
+                "calmar_ratio": 0.0,
+                "annualized_return": 0.0,
+                "annualized_volatility": 0.0,
+                "max_drawdown": 0.0,
+            }
+
+        n = len(returns_series)
+        periods_per_year = min(252, max(n, 1))
+
+        # Annualized return (geometric)
+        cumulative = 1.0
+        for r in returns_series:
+            cumulative *= (1.0 + _safe_float(r))
+        annualized_return = cumulative ** (periods_per_year / n) - 1.0
+
+        # Annualized volatility
+        std_dev = statistics.stdev([_safe_float(r) for r in returns_series])
+        annualized_vol = std_dev * math.sqrt(periods_per_year)
+
+        # Per-period risk-free rate
+        rf_per_period = (1.0 + risk_free_rate) ** (1.0 / periods_per_year) - 1.0
+
+        # Sharpe ratio
+        excess = [_safe_float(r) - rf_per_period for r in returns_series]
+        mean_excess = statistics.mean(excess)
+        sharpe = (mean_excess / std_dev * math.sqrt(periods_per_year)) if std_dev > 0 else 0.0
+
+        # Sortino ratio (downside deviation)
+        downside = [min(0.0, e) for e in excess]
+        downside_sq_mean = statistics.mean([d ** 2 for d in downside])
+        downside_dev = math.sqrt(downside_sq_mean)
+        sortino = (
+            mean_excess / downside_dev * math.sqrt(periods_per_year)
+            if downside_dev > 0 else 0.0
+        )
+
+        # Max drawdown
+        peak = cumulative_val = 1.0
+        max_dd = 0.0
+        for r in returns_series:
+            cumulative_val *= (1.0 + _safe_float(r))
+            if cumulative_val > peak:
+                peak = cumulative_val
+            dd = (peak - cumulative_val) / peak
+            if dd > max_dd:
+                max_dd = dd
+
+        # Calmar ratio
+        calmar = (annualized_return / max_dd) if max_dd > 0 else 0.0
+
+        return {
+            "sharpe_ratio": round(sharpe, 4),
+            "sortino_ratio": round(sortino, 4),
+            "calmar_ratio": round(calmar, 4),
+            "annualized_return": round(annualized_return, 6),
+            "annualized_volatility": round(annualized_vol, 6),
+            "max_drawdown": round(max_dd, 6),
+        }
+
+    def get_yield_decomposition(self, pool_apy, base_apy=0.0, reward_apy=0.0, il_drag=0.0):
+        """Decompose a pool's total APY into its yield components.
+
+        Breaks the advertised APY into base yield (swap fees), reward
+        yield (token incentives), and impermanent loss drag, then computes
+        a quality score that penalises IL-heavy and reward-dependent pools.
+
+        Args:
+            pool_apy:   Total advertised pool APY (percentage, e.g. 25.0).
+            base_apy:   Swap-fee component of APY (percentage).
+            reward_apy: Token-incentive component of APY (percentage).
+            il_drag:    Estimated impermanent loss drag (percentage, positive value).
+
+        Returns:
+            dict with base_yield, reward_yield, il_drag, net_effective_yield,
+            reward_dependency_pct, and quality_score (0-100).
+        """
+        pool_apy = _safe_float(pool_apy)
+        base_apy = _safe_float(base_apy)
+        reward_apy = _safe_float(reward_apy)
+        il_drag = abs(_safe_float(il_drag))
+
+        # If components not supplied, infer base from total minus reward
+        if base_apy == 0.0 and reward_apy == 0.0:
+            base_apy = pool_apy
+        elif base_apy == 0.0:
+            base_apy = max(0.0, pool_apy - reward_apy)
+
+        net_effective = base_apy + reward_apy - il_drag
+        total_positive = base_apy + reward_apy if (base_apy + reward_apy) > 0 else 1.0
+        reward_dependency = (reward_apy / total_positive) * 100.0
+
+        # Quality score: start at 100, penalise reward dependency and IL
+        # Heavy reward dependency (>70 %) costs up to 40 pts
+        reward_penalty = min(40.0, (reward_dependency / 100.0) * 40.0)
+        # IL drag relative to gross yield costs up to 35 pts
+        il_ratio = (il_drag / total_positive) * 100.0 if total_positive > 0 else 0.0
+        il_penalty = min(35.0, (il_ratio / 100.0) * 35.0)
+        # Negative net yield costs remaining 25 pts proportionally
+        negative_penalty = 0.0
+        if net_effective < 0:
+            negative_penalty = min(25.0, (abs(net_effective) / total_positive) * 25.0)
+
+        quality_score = max(0.0, 100.0 - reward_penalty - il_penalty - negative_penalty)
+
+        return {
+            "pool_apy": round(pool_apy, 4),
+            "base_yield": round(base_apy, 4),
+            "reward_yield": round(reward_apy, 4),
+            "il_drag": round(il_drag, 4),
+            "net_effective_yield": round(net_effective, 4),
+            "reward_dependency_pct": round(reward_dependency, 2),
+            "quality_score": round(quality_score, 2),
+        }
+
+    def recommend_yield_optimization(
+        self, current_apy, current_tvl, risk_tolerance="medium", asset="ETH-USDT"
+    ):
+        """Recommend yield-optimization actions for a given position.
+
+        Fetches ecosystem yields, filters by risk tolerance, ranks
+        opportunities by risk-adjusted improvement, and returns the top 3
+        recommendations.
+
+        Args:
+            current_apy:    Current position APY (percentage).
+            current_tvl:    Current position TVL in USD.
+            risk_tolerance: One of "low", "medium", "high".
+            asset:          Trading pair (e.g. "ETH-USDT").
+
+        Returns:
+            dict with current position info, top 3 recommendations, and
+            expected_improvement for each.
+        """
+        current_apy = _safe_float(current_apy)
+        current_tvl = _safe_float(current_tvl)
+
+        # Risk-tolerance APY caps and minimum TVL thresholds
+        tolerance_config = {
+            "low":    {"max_apy": 15.0,  "min_tvl": 5_000_000},
+            "medium": {"max_apy": 50.0,  "min_tvl": 1_000_000},
+            "high":   {"max_apy": 500.0, "min_tvl": 100_000},
+        }
+        cfg = tolerance_config.get(risk_tolerance, tolerance_config["medium"])
+
+        base_token = asset.split("-")[0] if "-" in asset else asset
+        yields_result = self.get_protocol_yields(asset_filter=base_token)
+
+        opportunities = []
+        if isinstance(yields_result.get("data"), list):
+            for entry in yields_result["data"]:
+                apy = _safe_float(entry.get("apy") or entry.get("estimatedApy"))
+                tvl = _safe_float(entry.get("tvl") or entry.get("totalTvl"))
+                if apy <= current_apy:
+                    continue
+                if apy > cfg["max_apy"] or tvl < cfg["min_tvl"]:
+                    continue
+                # Risk-adjusted score: favour higher TVL and moderate APY
+                tvl_factor = math.log10(max(tvl, 1))
+                apy_improvement = apy - current_apy
+                score = apy_improvement * tvl_factor
+                risk_label = (
+                    "low" if apy < 15 and tvl > 5_000_000
+                    else "high" if apy > 50 or tvl < 500_000
+                    else "medium"
+                )
+                opportunities.append({
+                    "protocol": entry.get("protocolName") or entry.get("protocol", "unknown"),
+                    "pool": entry.get("poolName") or entry.get("investmentName", ""),
+                    "apy": round(apy, 4),
+                    "tvl": round(tvl, 2),
+                    "expected_improvement_pct": round(apy_improvement, 4),
+                    "risk_assessment": risk_label,
+                    "score": round(score, 4),
+                })
+
+        # Rank by composite score descending
+        opportunities.sort(key=lambda x: x["score"], reverse=True)
+        top_3 = opportunities[:3]
+
+        return {
+            "asset": asset,
+            "risk_tolerance": risk_tolerance,
+            "current_apy": current_apy,
+            "current_tvl": current_tvl,
+            "recommendations": top_3,
+            "opportunities_evaluated": len(opportunities),
+        }
+
+    def get_protocol_health_score(
+        self, protocol_name, tvl=0.0, apy=0.0, age_days=0, audit_count=0, unique_users=0
+    ):
+        """Compute a composite health score (0-100) for a DeFi protocol.
+
+        Weighted components:
+          - TVL score        (25 %): log-scaled, 10 M USD -> 100.
+          - Yield sustainability (20 %): penalises extreme APYs (>100 %).
+          - Maturity         (20 %): log-scaled, 365 days -> 100.
+          - Audit coverage   (15 %): each audit adds 25 pts, capped at 100.
+          - User base        (20 %): log-scaled, 10 000 users -> 100.
+
+        Args:
+            protocol_name: Human-readable protocol name.
+            tvl:           Total value locked in USD.
+            apy:           Current APY (percentage).
+            age_days:      Number of days since protocol launch.
+            audit_count:   Number of completed security audits.
+            unique_users:  Number of unique wallet addresses.
+
+        Returns:
+            dict with total_score, component scores, risk_label, and breakdown.
+        """
+        tvl = _safe_float(tvl)
+        apy = _safe_float(apy)
+        age_days = max(0, int(_safe_float(age_days)))
+        audit_count = max(0, int(_safe_float(audit_count)))
+        unique_users = max(0, int(_safe_float(unique_users)))
+
+        # TVL score (25 %): log10(tvl) / log10(10_000_000) * 100, capped
+        tvl_raw = (math.log10(max(tvl, 1)) / math.log10(10_000_000)) * 100.0
+        tvl_score = min(100.0, max(0.0, tvl_raw))
+
+        # Yield sustainability (20 %): 0-30 % APY is ideal (score 100),
+        # linearly decays to 0 at 200 % APY, negative APY scores 0.
+        if apy < 0:
+            yield_score = 0.0
+        elif apy <= 30:
+            yield_score = 100.0
+        elif apy <= 200:
+            yield_score = max(0.0, 100.0 - ((apy - 30) / 170.0) * 100.0)
+        else:
+            yield_score = 0.0
+
+        # Maturity (20 %): log-scaled, 365 days -> 100
+        if age_days > 0:
+            maturity_raw = (math.log10(max(age_days, 1)) / math.log10(365)) * 100.0
+            maturity_score = min(100.0, max(0.0, maturity_raw))
+        else:
+            maturity_score = 0.0
+
+        # Audit coverage (15 %): 25 pts per audit, capped at 100
+        audit_score = min(100.0, audit_count * 25.0)
+
+        # User base (20 %): log-scaled, 10 000 users -> 100
+        if unique_users > 0:
+            user_raw = (math.log10(max(unique_users, 1)) / math.log10(10_000)) * 100.0
+            user_score = min(100.0, max(0.0, user_raw))
+        else:
+            user_score = 0.0
+
+        # Weighted total
+        total = (
+            tvl_score * 0.25
+            + yield_score * 0.20
+            + maturity_score * 0.20
+            + audit_score * 0.15
+            + user_score * 0.20
+        )
+        total = round(min(100.0, max(0.0, total)), 2)
+
+        # Risk label
+        if total >= 75:
+            risk_label = "low"
+        elif total >= 50:
+            risk_label = "medium"
+        elif total >= 25:
+            risk_label = "high"
+        else:
+            risk_label = "critical"
+
+        return {
+            "protocol_name": protocol_name,
+            "total_score": total,
+            "risk_label": risk_label,
+            "components": {
+                "tvl_score": round(tvl_score, 2),
+                "yield_sustainability_score": round(yield_score, 2),
+                "maturity_score": round(maturity_score, 2),
+                "audit_score": round(audit_score, 2),
+                "user_base_score": round(user_score, 2),
+            },
+            "weights": {
+                "tvl": 0.25,
+                "yield_sustainability": 0.20,
+                "maturity": 0.20,
+                "audit_coverage": 0.15,
+                "user_base": 0.20,
+            },
+        }
+
     # ── Integration Summary ───────────────────────────────────────────
 
     def get_integration_summary(self) -> dict:
@@ -298,6 +610,10 @@ class DeFiAnalyzer:
                 "compare_strategies - Rank Genesis vs competing protocols",
                 "get_tvl_data - TVL tracking for X Layer ecosystem",
                 "benchmark_genesis - Comprehensive strategy score-card",
+                "calculate_risk_adjusted_return - Sharpe, Sortino, and Calmar ratios",
+                "get_yield_decomposition - APY component breakdown and quality score",
+                "recommend_yield_optimization - Top yield opportunities by risk tolerance",
+                "get_protocol_health_score - Composite protocol health score (0-100)",
             ],
             "chain_index": self.chain_index,
             "api_base": DEFI_BASE_URL,
