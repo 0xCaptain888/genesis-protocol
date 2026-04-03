@@ -240,7 +240,7 @@
     <line x1="818" y1="650" x2="834" y2="650" stroke="#6b7280" stroke-opacity="0.3" stroke-width="1" stroke-dasharray="2 2"/>
 
     <!-- Bottom label -->
-    <text x="600" y="730" text-anchor="middle" fill="#475569" font-size="9" letter-spacing="1.5">BUILT FOR OKX HACKATHON 2025</text>
+    <text x="600" y="730" text-anchor="middle" fill="#475569" font-size="9" letter-spacing="1.5">BUILT FOR OKX BUILD X HACKATHON 2026</text>
     <text x="600" y="748" text-anchor="middle" fill="#334155" font-size="8" letter-spacing="1">AI-DRIVEN LIQUIDITY MANAGEMENT ON UNISWAP V4</text>
   </g>
 

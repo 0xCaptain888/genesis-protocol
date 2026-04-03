@@ -822,7 +822,7 @@ function initCharts() {
 
   // Range chart
   rngChart = echarts.init(document.getElementById('chart-range'));
-  const rX=Array.from({length:30},(_,i)=>i), price=rX.map(x=>100+15*Math.sin(x/4)+Math.random()*5);
+  const rX=Array.from({length:30},(_,i)=>i), price=rX.map(x=>100+15*Math.sin(x/4)+3*Math.sin(x*1.7+2));
   rngChart.setOption({backgroundColor:'transparent',grid:{top:5,bottom:15,left:30,right:5},
     xAxis:{type:'category',data:rX,show:false},
     yAxis:{type:'value',min:80,max:130,axisLabel:{color:'#6b7280',fontSize:9},splitLine:{show:false}},
@@ -1127,27 +1127,28 @@ async function runCognitiveCycle() {
   addLog('[L3 规划层] 生成行动计划...', 'text-green-400');
   setDot(3,'#22c55e');
   await sleep(600);
+  // Read on-chain context early (needed for confidence + quality calculations)
+  const stratCount = document.getElementById('stat-strategies')?.textContent;
+  const decCount = document.getElementById('stat-decisions')?.textContent;
+  const hasChainData = stratCount && stratCount !== '--' && !stratCount.includes('skeleton');
   // Confidence = f(data_quality, regime_clarity, trend_strength) — fully deterministic
   let confScore = 0.55;
   if (dataLive) confScore += 0.15; // real market data
   if (realVol !== null) confScore += 0.10; // real volatility
   if (parseFloat(vol)>3||parseFloat(vol)<0.5) confScore += 0.08; // clear regime
   if (ethChg && Math.abs(parseFloat(ethChg))>1) confScore += 0.07; // strong trend
-  if (stratCount && stratCount!=='--') confScore += 0.05; // chain data available
+  if (hasChainData) confScore += 0.05; // chain data available
   confScore = Math.min(0.98, confScore);
   const confidence = confScore.toFixed(2);
   const action = parseFloat(vol)>2 ? 'SWITCH_TO_VOLATILE_DEFENDER' : parseFloat(vol)>1 ? 'ADJUST_FEE_SENSITIVITY' : 'MAINTAIN_CALM_ACCUMULATOR';
   const actionCn = parseFloat(vol)>2 ? '切换至波动防御型策略' : parseFloat(vol)>1 ? '调整费率敏感度参数' : '维持稳健积累型策略';
   addLog('  推荐操作: '+action);
   addLog('  操作说明: '+actionCn);
-  addLog('  置信度: '+confidence+' = 基础0.55'+(dataLive?' + 实时数据0.15':'')+(realVol!==null?' + 真实波动率0.10':'')+(parseFloat(vol)>3||parseFloat(vol)<0.5?' + 明确制度0.08':'')+(ethChg&&Math.abs(parseFloat(ethChg))>1?' + 强趋势0.07':''));
+  addLog('  置信度: '+confidence+' = 基础0.55'+(dataLive?' + 实时数据0.15':'')+(realVol!==null?' + 真实波动率0.10':'')+(parseFloat(vol)>3||parseFloat(vol)<0.5?' + 明确制度0.08':'')+(ethChg&&Math.abs(parseFloat(ethChg))>1?' + 强趋势0.07':'')+(hasChainData?' + 链上数据0.05':''));
   addLog('  '+(parseFloat(confidence)>=0.7?'<span class="text-green-400">超过阈值 0.7 → 可执行</span>':'<span class="text-yellow-400">低于阈值 0.7 → 暂不执行 (需更多数据)</span>'));
   addLog('  推荐预设: '+regime.preset);
   addLog('  费率范围: '+regime.fee);
-  // Show on-chain context if available
-  const stratCount = document.getElementById('stat-strategies')?.textContent;
-  const decCount = document.getElementById('stat-decisions')?.textContent;
-  if (stratCount && stratCount !== '--' && !stratCount.includes('skeleton')) {
+  if (hasChainData) {
     addLog('  链上状态: '+stratCount+' 个活跃策略, '+decCount+' 条决策记录', 'text-gray-500');
   }
   await sleep(400);
@@ -1180,12 +1181,12 @@ async function runCognitiveCycle() {
   let qualityScore = 50;
   if (dataLive) qualityScore += 18;       // real prices
   if (realVol !== null) qualityScore += 12; // real volatility
-  if (stratCount && stratCount!=='--') qualityScore += 8; // chain data
+  if (hasChainData) qualityScore += 8; // chain data
   if (parseFloat(vol)>3||parseFloat(vol)<0.5) qualityScore += 6; // clear regime
   if (totalCycles>3 && parseInt(consistency)>60) qualityScore += 6; // consistent decisions
   qualityScore = Math.min(98, qualityScore);
   addLog('  决策质量评分: '+qualityScore+'/100');
-  addLog('    数据完整性: '+(dataLive?'18/18':'0/18')+' | 波动率来源: '+(realVol!==null?'12/12':'0/12')+' | 链上数据: '+(stratCount&&stratCount!=='--'?'8/8':'0/8'));
+  addLog('    数据完整性: '+(dataLive?'18/18':'0/18')+' | 波动率来源: '+(realVol!==null?'12/12':'0/12')+' | 链上数据: '+(hasChainData?'8/8':'0/8'));
   // Bias detection: check if all recent recommendations are same direction
   const biasDetected = totalCycles>=3 && history.slice(-3).every(h=>h.action===action);
   addLog('  偏差检测: '+(biasDetected?'<span class="text-yellow-400">同方向偏差 (连续'+sameActionCount+'次相同推荐，建议人工审查)</span>':'<span class="text-green-400">无显著偏差</span>'));
