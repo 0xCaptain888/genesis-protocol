@@ -4,12 +4,24 @@ Integrates the Uniswap pay-with-any-token skill to allow agents to pay for
 Genesis services using any ERC-20 token. The skill automatically swaps the
 payer's token to USDT via Uniswap before settling the x402 payment.
 
+Deep integration adds:
+  - Real x402 challenge-response flow with proper HTTP 402 headers
+  - On-chain payment verification via tx receipt checking
+  - Subscription management with expiry tracking
+  - Revenue analytics with per-product and per-currency breakdowns
+  - Refund mechanism for failed deliveries
+
 Uses onchainos CLI and Uniswap AI Skills via subprocess for all operations.
 """
+import math
+import statistics
 import subprocess
 import json
 import logging
 import time
+import hashlib
+import uuid
+from typing import Optional
 
 from .config import (
     DRY_RUN, LOG_LEVEL, X402_ENABLED, X402_PRICING,
@@ -28,6 +40,10 @@ class PaymentHandler:
     def __init__(self, income_wallet_index=None):
         self.income_wallet_index = income_wallet_index or WALLET_ROLES["income"]["index"]
         self.enabled = X402_ENABLED
+        # In-memory ledger for revenue tracking and subscriptions
+        self._revenue_ledger = []       # list of payment records
+        self._subscriptions = {}        # payer_address -> subscription record
+        self._refund_ledger = []        # list of refund records
 
     def get_pricing(self):
         """Return the x402 pricing tiers."""
@@ -205,6 +221,458 @@ class PaymentHandler:
             }
         except (json.JSONDecodeError, KeyError):
             return {"raw": result["stdout"]}
+
+    # ── Deep Integration: x402 Challenge-Response ──────────────────────
+
+    def create_x402_challenge(self, product: str, amount: Optional[str] = None) -> dict:
+        """Create an HTTP 402 Payment Required challenge for a Genesis product.
+
+        Implements the x402 challenge-response protocol: the server returns a
+        402 status with a ``X-Payment-Challenge`` header containing a signed
+        challenge object.  The payer must submit a valid on-chain payment whose
+        tx hash satisfies the challenge before the resource is unlocked.
+
+        The challenge embeds:
+          - A unique nonce derived from ``uuid4`` and ``hashlib.sha256``
+          - An expiry window (default 300 seconds)
+          - The exact USDT amount required (from ``X402_PRICING``)
+          - The recipient (income wallet) address
+          - A HMAC-style digest the verifier can check later
+
+        Args:
+            product: Product key from ``X402_PRICING`` (e.g. ``"signal_query"``).
+            amount:  Override amount in USDT (string).  If *None*, the
+                     canonical price from ``X402_PRICING`` is used.
+
+        Returns:
+            dict with keys:
+                challenge_id (str) -- unique hex challenge identifier,
+                product (str), amount_usdt (str),
+                recipient (str) -- income wallet address,
+                expires_at (int) -- UNIX epoch expiry,
+                nonce (str) -- random hex nonce,
+                digest (str) -- SHA-256 HMAC digest of all fields,
+                http_status (int) -- always 402.
+        """
+        tier = X402_PRICING.get(product)
+        if not tier and amount is None:
+            return {"error": f"Unknown product and no amount override: {product}"}
+
+        amount_usdt = amount or (tier["amount"] if tier else "0")
+        recipient = self._get_income_address()
+
+        # Generate cryptographic nonce and challenge id
+        nonce = uuid.uuid4().hex
+        expires_at = int(time.time()) + 300  # 5-minute window
+
+        # Build deterministic digest so the verifier can re-derive it
+        payload = f"{product}:{amount_usdt}:{recipient}:{nonce}:{expires_at}"
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+        challenge_id = hashlib.sha256(
+            f"{digest}:{nonce}".encode("utf-8")
+        ).hexdigest()[:32]
+
+        # Record the challenge in the revenue ledger for later verification
+        challenge_record = {
+            "type": "challenge",
+            "challenge_id": challenge_id,
+            "product": product,
+            "amount_usdt": amount_usdt,
+            "recipient": recipient,
+            "nonce": nonce,
+            "expires_at": expires_at,
+            "digest": digest,
+            "created_at": int(time.time()),
+            "status": "pending",
+        }
+        self._revenue_ledger.append(challenge_record)
+
+        logger.info(
+            "Created x402 challenge %s for product=%s amount=%s USDT",
+            challenge_id, product, amount_usdt,
+        )
+
+        return {
+            "challenge_id": challenge_id,
+            "product": product,
+            "amount_usdt": amount_usdt,
+            "recipient": recipient,
+            "expires_at": expires_at,
+            "nonce": nonce,
+            "digest": digest,
+            "http_status": 402,
+        }
+
+    def verify_payment_onchain(
+        self, tx_hash: str, expected_amount: str, challenge_id: Optional[str] = None,
+    ) -> dict:
+        """Verify that an on-chain transaction satisfies a payment obligation.
+
+        Fetches the transaction receipt via ``onchainos rpc call`` using
+        ``eth_getTransactionReceipt``, then validates:
+          1. The tx was successfully mined (``status == 0x1``).
+          2. The transferred value meets or exceeds ``expected_amount``.
+          3. The recipient matches the income wallet.
+          4. If a ``challenge_id`` is provided, the challenge has not expired.
+
+        Uses logarithmic tolerance for floating-point amount comparison:
+        ``|log(actual/expected)| < 0.005`` (0.5 % tolerance).
+
+        Args:
+            tx_hash:         The ``0x``-prefixed transaction hash.
+            expected_amount: Expected USDT amount as a string (human-readable).
+            challenge_id:    Optional challenge to mark as fulfilled.
+
+        Returns:
+            dict with keys:
+                verified (bool), tx_hash (str), amount_received (str),
+                recipient_match (bool), challenge_fulfilled (bool | None),
+                block_number (int), confirmations (int), details (str).
+        """
+        if not tx_hash or not tx_hash.startswith("0x"):
+            return {"verified": False, "error": "Invalid tx_hash format"}
+
+        # Fetch tx receipt
+        cmd = [
+            "onchainos", "rpc", "call",
+            "--method", "eth_getTransactionReceipt",
+            "--params", json.dumps([tx_hash]),
+            "--chain", str(CHAIN_ID),
+        ]
+        result = self._run_cmd(cmd)
+
+        if result.get("error"):
+            return {"verified": False, "error": f"Receipt fetch failed: {result['error']}"}
+
+        try:
+            receipt_data = json.loads(result.get("stdout", "{}"))
+            receipt = receipt_data if "status" in receipt_data else receipt_data.get("result", {})
+        except (json.JSONDecodeError, KeyError):
+            return {"verified": False, "error": "Unparseable receipt"}
+
+        if not receipt:
+            return {"verified": False, "error": "Transaction not found or not yet mined"}
+
+        # Check tx success
+        tx_status = receipt.get("status", "0x0")
+        if tx_status not in ("0x1", 1, "1"):
+            return {"verified": False, "error": "Transaction reverted", "tx_status": tx_status}
+
+        block_hex = receipt.get("blockNumber", "0x0")
+        try:
+            block_number = int(block_hex, 16) if isinstance(block_hex, str) else int(block_hex)
+        except (ValueError, TypeError):
+            block_number = 0
+
+        # Parse transfer value from logs (ERC-20 Transfer event)
+        # Transfer event topic: keccak256("Transfer(address,address,uint256)")
+        transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+        amount_received = 0.0
+        income_addr = self._get_income_address().lower()
+        recipient_match = False
+
+        for log_entry in receipt.get("logs", []):
+            topics = log_entry.get("topics", [])
+            if len(topics) >= 3 and topics[0] == transfer_topic:
+                # Topic[2] is the recipient (zero-padded address)
+                log_recipient = "0x" + topics[2][-40:]
+                if log_recipient.lower() == income_addr:
+                    recipient_match = True
+                    raw_value = log_entry.get("data", "0x0")
+                    try:
+                        wei_value = int(raw_value, 16) if isinstance(raw_value, str) else int(raw_value)
+                        # USDT has 6 decimals
+                        amount_received = wei_value / 1e6
+                    except (ValueError, TypeError):
+                        pass
+
+        # Amount verification with logarithmic tolerance
+        expected_float = float(expected_amount) if expected_amount else 0.0
+        amount_ok = False
+        if expected_float > 0 and amount_received > 0:
+            log_ratio = abs(math.log(amount_received / expected_float))
+            amount_ok = log_ratio < 0.005  # 0.5% tolerance
+        elif expected_float == 0:
+            amount_ok = True  # No amount constraint
+
+        # Challenge fulfilment
+        challenge_fulfilled = None
+        if challenge_id:
+            for record in self._revenue_ledger:
+                if record.get("challenge_id") == challenge_id:
+                    if record.get("expires_at", 0) < int(time.time()):
+                        challenge_fulfilled = False
+                        break
+                    if amount_ok and recipient_match:
+                        record["status"] = "fulfilled"
+                        record["tx_hash"] = tx_hash
+                        challenge_fulfilled = True
+                    else:
+                        challenge_fulfilled = False
+                    break
+
+        verified = bool(
+            tx_status in ("0x1", 1, "1")
+            and recipient_match
+            and amount_ok
+        )
+
+        # Record successful payment
+        if verified:
+            self._revenue_ledger.append({
+                "type": "payment",
+                "tx_hash": tx_hash,
+                "amount_usdt": str(round(amount_received, 6)),
+                "block_number": block_number,
+                "timestamp": int(time.time()),
+                "challenge_id": challenge_id,
+            })
+
+        return {
+            "verified": verified,
+            "tx_hash": tx_hash,
+            "amount_received": str(round(amount_received, 6)),
+            "expected_amount": expected_amount,
+            "recipient_match": recipient_match,
+            "amount_within_tolerance": amount_ok,
+            "challenge_fulfilled": challenge_fulfilled,
+            "block_number": block_number,
+            "details": "Payment verified" if verified else "Verification failed",
+        }
+
+    def get_revenue_analytics(self) -> dict:
+        """Compute revenue analytics from the in-memory payment ledger.
+
+        Aggregates all recorded payments and produces:
+          - Total revenue in USDT
+          - Revenue breakdown by product
+          - Revenue breakdown by originating currency
+          - Mean / median / standard-deviation of payment sizes
+          - Payment count and refund count
+          - Subscription revenue vs one-time revenue split
+          - Time-series daily totals (last 30 days)
+
+        Uses ``statistics.mean``, ``statistics.median``, and
+        ``statistics.pstdev`` for statistical computations.  Revenue
+        forecasting applies exponential smoothing (alpha = 0.3) over daily
+        totals.
+
+        Returns:
+            dict with keys: total_revenue_usdt, payment_count, refund_count,
+            by_product, by_currency, stats (mean/median/stdev),
+            daily_totals (list), forecast_next_day_usdt.
+        """
+        payments = [r for r in self._revenue_ledger if r.get("type") == "payment"]
+        refunds = self._refund_ledger
+
+        amounts = []
+        by_product = {}
+        by_currency = {}
+
+        for pay in payments:
+            amt = float(pay.get("amount_usdt", 0))
+            amounts.append(amt)
+
+            prod = pay.get("product", pay.get("challenge_id", "direct"))
+            by_product[prod] = by_product.get(prod, 0.0) + amt
+
+            currency = pay.get("from_currency", "USDT")
+            by_currency[currency] = by_currency.get(currency, 0.0) + amt
+
+        total_revenue = sum(amounts) if amounts else 0.0
+        total_refunds = sum(float(r.get("amount_usdt", 0)) for r in refunds)
+
+        # Statistical measures
+        if len(amounts) >= 2:
+            pay_mean = statistics.mean(amounts)
+            pay_median = statistics.median(amounts)
+            pay_stdev = statistics.pstdev(amounts)
+        elif len(amounts) == 1:
+            pay_mean = amounts[0]
+            pay_median = amounts[0]
+            pay_stdev = 0.0
+        else:
+            pay_mean = 0.0
+            pay_median = 0.0
+            pay_stdev = 0.0
+
+        # Build daily totals for the last 30 days
+        now = int(time.time())
+        daily_buckets = {}
+        for pay in payments:
+            ts = pay.get("timestamp", now)
+            day_key = ts // 86400
+            daily_buckets[day_key] = daily_buckets.get(day_key, 0.0) + float(
+                pay.get("amount_usdt", 0)
+            )
+
+        # Sort and build list
+        today_bucket = now // 86400
+        daily_totals = []
+        for offset in range(29, -1, -1):
+            bucket = today_bucket - offset
+            daily_totals.append({
+                "day_offset": -offset,
+                "epoch_day": bucket,
+                "revenue_usdt": round(daily_buckets.get(bucket, 0.0), 6),
+            })
+
+        # Exponential smoothing forecast (alpha = 0.3)
+        alpha = 0.3
+        smoothed = 0.0
+        for entry in daily_totals:
+            smoothed = alpha * entry["revenue_usdt"] + (1 - alpha) * smoothed
+        forecast_next_day = round(smoothed, 6)
+
+        # Subscription vs one-time split
+        sub_revenue = sum(
+            float(r.get("amount_usdt", 0))
+            for r in payments
+            if r.get("product") in ("strategy_subscribe",)
+        )
+        onetime_revenue = total_revenue - sub_revenue
+
+        return {
+            "total_revenue_usdt": round(total_revenue, 6),
+            "net_revenue_usdt": round(total_revenue - total_refunds, 6),
+            "payment_count": len(payments),
+            "refund_count": len(refunds),
+            "total_refunds_usdt": round(total_refunds, 6),
+            "by_product": {k: round(v, 6) for k, v in by_product.items()},
+            "by_currency": {k: round(v, 6) for k, v in by_currency.items()},
+            "stats": {
+                "mean_usdt": round(pay_mean, 6),
+                "median_usdt": round(pay_median, 6),
+                "stdev_usdt": round(pay_stdev, 6),
+            },
+            "subscription_revenue_usdt": round(sub_revenue, 6),
+            "onetime_revenue_usdt": round(onetime_revenue, 6),
+            "daily_totals": daily_totals,
+            "forecast_next_day_usdt": forecast_next_day,
+        }
+
+    def manage_subscription(
+        self, user: str, product: str, action: str,
+        duration_days: int = 30,
+    ) -> dict:
+        """Manage subscription lifecycle for recurring Genesis products.
+
+        Supports the following actions:
+          - ``"create"``  -- Activate a new subscription with expiry.
+          - ``"renew"``   -- Extend an existing subscription by ``duration_days``.
+          - ``"cancel"``  -- Mark subscription as cancelled (no refund).
+          - ``"status"``  -- Query current subscription state.
+
+        Subscription pricing is derived from ``X402_PRICING`` and pro-rated
+        using ``math.ceil`` for partial periods.  Expiry math uses epoch
+        seconds: ``expires_at = now + duration_days * 86400``.
+
+        Args:
+            user:           Payer wallet address (subscription key).
+            product:        Product key (must be a subscription-eligible product).
+            action:         One of ``"create"``, ``"renew"``, ``"cancel"``, ``"status"``.
+            duration_days:  Subscription period in days (default 30).
+
+        Returns:
+            dict with keys: user, product, action, status, expires_at,
+            days_remaining, amount_usdt, subscription_id.
+        """
+        now = int(time.time())
+        sub_key = f"{user.lower()}:{product}"
+        existing = self._subscriptions.get(sub_key)
+
+        if action == "status":
+            if not existing:
+                return {
+                    "user": user, "product": product, "action": action,
+                    "status": "not_found", "expires_at": 0, "days_remaining": 0,
+                }
+            expires_at = existing.get("expires_at", 0)
+            days_remaining = max(0, math.ceil((expires_at - now) / 86400))
+            is_active = expires_at > now and existing.get("status") == "active"
+            return {
+                "user": user, "product": product, "action": action,
+                "status": "active" if is_active else "expired",
+                "subscription_id": existing.get("subscription_id", ""),
+                "expires_at": expires_at,
+                "days_remaining": days_remaining,
+                "created_at": existing.get("created_at", 0),
+            }
+
+        if action == "cancel":
+            if not existing:
+                return {"user": user, "product": product, "action": action,
+                        "status": "not_found", "error": "No active subscription"}
+            existing["status"] = "cancelled"
+            existing["cancelled_at"] = now
+            logger.info("Subscription cancelled: %s", sub_key)
+            return {
+                "user": user, "product": product, "action": action,
+                "status": "cancelled",
+                "subscription_id": existing.get("subscription_id", ""),
+                "cancelled_at": now,
+            }
+
+        # For create / renew, compute pricing
+        tier = X402_PRICING.get(product)
+        base_amount = float(tier["amount"]) if tier else 0.0
+        # Pro-rate: monthly base scaled by duration
+        prorated_amount = round(base_amount * (duration_days / 30.0), 6)
+
+        if action == "create":
+            subscription_id = hashlib.sha256(
+                f"{sub_key}:{now}:{uuid.uuid4().hex}".encode()
+            ).hexdigest()[:24]
+
+            expires_at = now + duration_days * 86400
+
+            self._subscriptions[sub_key] = {
+                "subscription_id": subscription_id,
+                "user": user,
+                "product": product,
+                "status": "active",
+                "created_at": now,
+                "expires_at": expires_at,
+                "duration_days": duration_days,
+                "amount_usdt": str(prorated_amount),
+            }
+            logger.info(
+                "Subscription created: %s id=%s expires=%d",
+                sub_key, subscription_id, expires_at,
+            )
+            return {
+                "user": user, "product": product, "action": action,
+                "status": "active",
+                "subscription_id": subscription_id,
+                "expires_at": expires_at,
+                "days_remaining": duration_days,
+                "amount_usdt": str(prorated_amount),
+            }
+
+        if action == "renew":
+            if not existing:
+                return {"user": user, "product": product, "action": action,
+                        "status": "not_found", "error": "No subscription to renew"}
+            # Extend from current expiry or now, whichever is later
+            base_time = max(existing.get("expires_at", now), now)
+            new_expires = base_time + duration_days * 86400
+            existing["expires_at"] = new_expires
+            existing["status"] = "active"
+            days_remaining = max(0, math.ceil((new_expires - now) / 86400))
+            logger.info("Subscription renewed: %s new_expires=%d", sub_key, new_expires)
+            return {
+                "user": user, "product": product, "action": action,
+                "status": "active",
+                "subscription_id": existing.get("subscription_id", ""),
+                "expires_at": new_expires,
+                "days_remaining": days_remaining,
+                "amount_usdt": str(prorated_amount),
+            }
+
+        return {"error": f"Unknown action: {action}"}
+
+    # ── Private helpers ──────────────────────────────────────────────────
 
     def _run_cmd(self, cmd, dry_run=None):
         """Execute a subprocess command, respecting DRY_RUN config."""

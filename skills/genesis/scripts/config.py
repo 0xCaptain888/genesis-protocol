@@ -189,8 +189,8 @@ CONTRACTS = {
     "mev_protection_module": "0xA4f6ABd6F77928b06F075637ccBACA8f89e17386",
     "auto_rebalance_module": "0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee",
     "strategy_nft": "0xd969448dfc24Fe3Aff25e86db338fAB41b104319",
-    "liquidity_shield_module": "",   # Deployed with DeployMainnet.sol
-    "oracle_module": "",              # Deployed with DeployMainnet.sol
+    "liquidity_shield_module": "0x34Bd6972F086c947e4503185e1A1094d9846b2aC",
+    "oracle_module": "0x30049511c4c483E9500A74701DED562A8F1ea86f",
 }
 
 # ─── Mainnet Contract Addresses (X Layer Mainnet - Chain 196) ──────────────

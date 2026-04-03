@@ -8,9 +8,12 @@ Integrates the following Uniswap AI skills:
 Reference: https://github.com/Uniswap/uniswap-ai
 """
 
+import hashlib
 import json
 import logging
+import math
 import subprocess
+import time
 from typing import Optional
 
 from . import config
@@ -193,6 +196,280 @@ class UniswapSkillClient:
             "--quote-only",
         ]
         return self._run_skill_cmd(cmd, "payment_quote")
+
+    # ── pay-with-any-token deep integration ──────────────────────────
+
+    # Common intermediary tokens on X Layer for multi-hop routing
+    INTERMEDIARIES = {
+        "WETH": "0x5a77f1443d16ee5761d310e38b7308067eF82f21",
+        "USDC": "0x74b7F16337b8972027F6196A17a631aC6dE26d22",
+        "USDT": "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+    }
+
+    def find_optimal_payment_route(
+        self, from_token: str, to_token: str, amount: str, max_hops: int = 3
+    ) -> dict:
+        """Find the optimal multi-hop swap route for a payment.
+
+        Evaluates direct and multi-hop routes through common intermediary
+        tokens (WETH, USDC, USDT) and ranks them by expected output after
+        accounting for price impact and estimated gas costs.
+
+        Args:
+            from_token: Address of the source ERC-20 token.
+            to_token: Address of the destination token (typically USDT).
+            amount: Human-readable amount of *from_token* to spend.
+            max_hops: Maximum number of hops to consider (1-3, default 3).
+
+        Returns:
+            dict with ``routes`` list ranked best-first, each containing
+            path, expected_output, price_impact_bps, estimated_gas, and
+            a composite score.
+        """
+        amount_wei = float(amount)
+        routes: list[dict] = []
+
+        # --- Direct route (1-hop) ---------------------------------------------------
+        direct_quote = self.get_swap_quote(from_token, to_token, amount)
+        direct_output = float(direct_quote.get("amountOut", amount_wei * 0.997))
+        direct_impact_bps = max(0, round((1 - direct_output / amount_wei) * 10_000))
+        base_gas = 150_000  # single-pool V4 swap gas
+        routes.append({
+            "path": [from_token, to_token],
+            "hops": 1,
+            "expected_output": str(direct_output),
+            "price_impact_bps": direct_impact_bps,
+            "estimated_gas": base_gas,
+            "gas_cost_usd": round(base_gas * 0.05 / 1e9 * 3000, 4),  # gwei * ETH price approx
+        })
+
+        # --- 2-hop routes via intermediaries ----------------------------------------
+        if max_hops >= 2:
+            for name, intermediary in self.INTERMEDIARIES.items():
+                # Skip if intermediary is one of the endpoints
+                if intermediary.lower() in (from_token.lower(), to_token.lower()):
+                    continue
+
+                leg1_quote = self.get_swap_quote(from_token, intermediary, amount)
+                leg1_out = float(leg1_quote.get("amountOut", amount_wei * 0.998))
+
+                leg2_quote = self.get_swap_quote(intermediary, to_token, str(leg1_out))
+                leg2_out = float(leg2_quote.get("amountOut", leg1_out * 0.998))
+
+                impact_bps = max(0, round((1 - leg2_out / amount_wei) * 10_000))
+                hop2_gas = base_gas * 2 + 20_000  # two pools + routing overhead
+                routes.append({
+                    "path": [from_token, intermediary, to_token],
+                    "hops": 2,
+                    "intermediary": name,
+                    "expected_output": str(leg2_out),
+                    "price_impact_bps": impact_bps,
+                    "estimated_gas": hop2_gas,
+                    "gas_cost_usd": round(hop2_gas * 0.05 / 1e9 * 3000, 4),
+                })
+
+        # --- 3-hop routes via two intermediaries ------------------------------------
+        if max_hops >= 3:
+            intermediary_list = list(self.INTERMEDIARIES.items())
+            for i, (name_a, addr_a) in enumerate(intermediary_list):
+                for name_b, addr_b in intermediary_list[i + 1:]:
+                    if addr_a.lower() in (from_token.lower(), to_token.lower()):
+                        continue
+                    if addr_b.lower() in (from_token.lower(), to_token.lower()):
+                        continue
+
+                    q1 = self.get_swap_quote(from_token, addr_a, amount)
+                    o1 = float(q1.get("amountOut", amount_wei * 0.998))
+
+                    q2 = self.get_swap_quote(addr_a, addr_b, str(o1))
+                    o2 = float(q2.get("amountOut", o1 * 0.998))
+
+                    q3 = self.get_swap_quote(addr_b, to_token, str(o2))
+                    o3 = float(q3.get("amountOut", o2 * 0.998))
+
+                    impact_bps = max(0, round((1 - o3 / amount_wei) * 10_000))
+                    hop3_gas = base_gas * 3 + 40_000
+                    routes.append({
+                        "path": [from_token, addr_a, addr_b, to_token],
+                        "hops": 3,
+                        "intermediaries": [name_a, name_b],
+                        "expected_output": str(o3),
+                        "price_impact_bps": impact_bps,
+                        "estimated_gas": hop3_gas,
+                        "gas_cost_usd": round(hop3_gas * 0.05 / 1e9 * 3000, 4),
+                    })
+
+        # --- Rank by composite score (higher output, lower gas) ---------------------
+        for route in routes:
+            output_val = float(route["expected_output"])
+            gas_penalty = route["gas_cost_usd"]
+            route["score"] = round(output_val - gas_penalty, 6)
+
+        routes.sort(key=lambda r: r["score"], reverse=True)
+        best = routes[0] if routes else None
+
+        return {
+            "from_token": from_token,
+            "to_token": to_token,
+            "input_amount": amount,
+            "max_hops": max_hops,
+            "routes_evaluated": len(routes),
+            "best_route": best,
+            "routes": routes,
+        }
+
+    def simulate_payment(
+        self,
+        from_token: str,
+        usdt_amount: str,
+        payer_address: str,
+        recipient_address: str,
+    ) -> dict:
+        """Simulate a full pay-with-any-token payment without executing.
+
+        Performs route discovery, quoting, gas estimation, and slippage
+        analysis, then returns a comprehensive cost breakdown the caller
+        can present before requesting confirmation.
+
+        Args:
+            from_token: Address of the ERC-20 token the payer holds.
+            usdt_amount: Exact USDT amount to deliver to the recipient.
+            payer_address: Wallet address of the payer.
+            recipient_address: Wallet address of the recipient.
+
+        Returns:
+            dict containing expected_input, gas_cost_usd, slippage_bps,
+            total_cost, recommended route, and full simulation metadata.
+        """
+        usdt_addr = self.INTERMEDIARIES["USDT"]
+
+        # Step 1 -- find the best route from payer token -> USDT
+        routing = self.find_optimal_payment_route(
+            from_token, usdt_addr, usdt_amount, max_hops=3,
+        )
+        best_route = routing.get("best_route")
+        if best_route is None:
+            return {"error": "no_route_found", "detail": "Could not find any valid route"}
+
+        # Step 2 -- exact-output quote so we know the required input
+        quote = self.quote_payment(from_token, usdt_amount)
+        required_input = float(
+            quote.get("requiredInput", quote.get("raw_output", usdt_amount))
+            if not quote.get("error") else usdt_amount
+        )
+
+        # Step 3 -- gas estimation
+        estimated_gas = best_route["estimated_gas"]
+        # Permit2 approval adds ~46k gas if not already approved
+        permit2_gas = 46_000
+        total_gas = estimated_gas + permit2_gas
+        gas_price_gwei = 0.05  # X Layer typical gas price
+        eth_price_usd = 3_000  # approximate
+        gas_cost_usd = round(total_gas * gas_price_gwei / 1e9 * eth_price_usd, 6)
+
+        # Step 4 -- slippage analysis
+        # Default protocol slippage is 50 bps; compute effective slippage
+        # from route price impact
+        route_impact_bps = best_route["price_impact_bps"]
+        slippage_tolerance_bps = 50
+        effective_slippage_bps = route_impact_bps + slippage_tolerance_bps
+        worst_case_input = required_input * (1 + effective_slippage_bps / 10_000)
+
+        # Step 5 -- total cost breakdown
+        total_cost_usd = round(float(usdt_amount) + gas_cost_usd, 6)
+
+        return {
+            "status": "simulated",
+            "payer": payer_address,
+            "recipient": recipient_address,
+            "payment_token": from_token,
+            "settlement_token": "USDT",
+            "usdt_amount": usdt_amount,
+            "expected_input": str(round(required_input, 8)),
+            "worst_case_input": str(round(worst_case_input, 8)),
+            "route": best_route["path"],
+            "route_hops": best_route["hops"],
+            "price_impact_bps": route_impact_bps,
+            "slippage_tolerance_bps": slippage_tolerance_bps,
+            "effective_slippage_bps": effective_slippage_bps,
+            "estimated_gas": total_gas,
+            "gas_cost_usd": gas_cost_usd,
+            "total_cost_usd": total_cost_usd,
+            "chain_id": self.chain_id,
+            "router": self.UNIVERSAL_ROUTER,
+            "permit2": self.PERMIT2,
+            "routes_evaluated": routing["routes_evaluated"],
+        }
+
+    def generate_payment_receipt(
+        self,
+        tx_hash: str,
+        product: str,
+        amount_usdt: str,
+        from_token: str,
+        payer_address: str,
+        recipient_address: str,
+    ) -> dict:
+        """Generate a structured, verifiable payment receipt.
+
+        Produces a receipt containing all payment details, a SHA-256
+        receipt hash for integrity verification, and x402 protocol
+        metadata suitable for on-chain or off-chain validation.
+
+        Args:
+            tx_hash: Transaction hash of the executed swap/payment.
+            product: Description or identifier of the purchased product.
+            amount_usdt: USDT amount delivered to the recipient.
+            from_token: Address of the token the payer spent.
+            payer_address: Wallet address of the payer.
+            recipient_address: Wallet address of the recipient.
+
+        Returns:
+            dict with receipt fields, receipt_hash (SHA-256 hex digest),
+            and x402 protocol metadata.
+        """
+        timestamp = int(time.time())
+        iso_timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp))
+
+        receipt_fields = {
+            "tx_hash": tx_hash,
+            "product": product,
+            "amount_usdt": amount_usdt,
+            "from_token": from_token,
+            "payer": payer_address,
+            "recipient": recipient_address,
+            "chain_id": self.chain_id,
+            "timestamp": timestamp,
+            "iso_timestamp": iso_timestamp,
+            "settlement_token": "USDT",
+            "router": self.UNIVERSAL_ROUTER,
+            "permit2": self.PERMIT2,
+        }
+
+        # Deterministic canonical JSON for hashing
+        canonical = json.dumps(receipt_fields, sort_keys=True, separators=(",", ":"))
+        receipt_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+        return {
+            **receipt_fields,
+            "receipt_hash": receipt_hash,
+            "block_number": None,       # to be filled after on-chain confirmation
+            "block_hash": None,          # to be filled after on-chain confirmation
+            "confirmations": 0,          # to be updated by caller
+            "x402_protocol": {
+                "version": "1.0",
+                "type": "payment_receipt",
+                "scheme": "exact_output_swap",
+                "settlement": "USDT",
+                "chain_id": self.chain_id,
+                "tx_hash": tx_hash,
+                "receipt_hash": receipt_hash,
+                "timestamp": iso_timestamp,
+                "payer": payer_address,
+                "recipient": recipient_address,
+                "amount": amount_usdt,
+            },
+        }
 
     # ── V4 Position Management ────────────────────────────────────────
 

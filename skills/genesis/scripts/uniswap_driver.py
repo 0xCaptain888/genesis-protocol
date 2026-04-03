@@ -10,6 +10,7 @@ Reference: https://github.com/Uniswap/uniswap-ai
 
 import json
 import logging
+import math
 import subprocess
 from typing import Optional
 
@@ -303,6 +304,357 @@ class UniswapDriverClient:
             "gas_estimate": gas_result,
             "current_tick": current_tick,
             "volatility_pct": volatility_pct,
+        }
+
+    # ── Deep Integration Methods ──────────────────────────────────────
+
+    def calculate_optimal_range(
+        self,
+        current_tick: int,
+        volatility_pct: float,
+        tick_spacing: int = 60,
+        confidence_level: float = 0.95,
+    ) -> dict:
+        """Calculate optimal tick range using a statistical model of price movement.
+
+        Models future price as a geometric Brownian motion and derives the
+        tick boundaries that contain the expected price path with the
+        requested confidence level over a 7-day horizon.
+
+        Core formula:
+            half_width = norm_z * volatility * sqrt(time_horizon)
+        The resulting price-space half-width is mapped to ticks, then
+        rounded outward to the nearest ``tick_spacing`` boundary.
+
+        Args:
+            current_tick:     Current pool tick.
+            volatility_pct:   Annualized volatility as a percentage (e.g. 80.0
+                              for 80 %).
+            tick_spacing:     Pool tick spacing (default 60 for Genesis hook
+                              pools).
+            confidence_level: Probability that price remains inside the range
+                              during the horizon window (0 < p < 1).
+
+        Returns:
+            dict with keys:
+                tick_lower              - Lower tick boundary (aligned).
+                tick_upper              - Upper tick boundary (aligned).
+                width_ticks             - Total width in ticks.
+                expected_time_in_range_pct - Estimated % of horizon the price
+                    spends inside the range.
+                capital_efficiency      - Multiplier vs a full-range position
+                    (full_range_width / width_ticks).
+        """
+        # ── Z-score lookup (fall back to 1.96 for unlisted levels) ─────
+        z_table = {0.90: 1.645, 0.95: 1.960, 0.99: 2.576}
+        norm_z = z_table.get(confidence_level, 1.960)
+
+        # ── Annualized vol  →  per-day standard deviation ──────────────
+        volatility = volatility_pct / 100.0
+        daily_sigma = volatility * math.sqrt(1.0 / 365.0)
+
+        # ── Horizon in days (1 week) ──────────────────────────────────
+        time_horizon = 7.0
+
+        # ── Half-width in price-return space ──────────────────────────
+        half_width_return = norm_z * daily_sigma * math.sqrt(time_horizon)
+
+        # Map return-space half-width to tick space.
+        # Each tick represents a ~0.01 % multiplicative price change,
+        # i.e. 1 tick ≈ log(1.0001) in log-price space, so
+        #   ticks = return / log(1.0001) ≈ return * 10_000.
+        log_tick = math.log(1.0001)
+        half_width_ticks_raw = half_width_return / log_tick
+
+        # ── Round outward to tick_spacing ─────────────────────────────
+        half_ticks = max(
+            tick_spacing,
+            int(math.ceil(half_width_ticks_raw / tick_spacing)) * tick_spacing,
+        )
+
+        tick_lower = (current_tick - half_ticks) // tick_spacing * tick_spacing
+        tick_upper = -(-((current_tick + half_ticks)) // tick_spacing) * tick_spacing
+        # Ensure tick_upper is at least one spacing above tick_lower
+        if tick_upper <= tick_lower:
+            tick_upper = tick_lower + tick_spacing
+
+        width_ticks = tick_upper - tick_lower
+
+        # ── Expected time-in-range % ─────────────────────────────────
+        # Approximate: for a centred range sized to the confidence level,
+        # the average fraction of time spent in range is slightly above the
+        # confidence level (boundary effects), capped at 100.
+        expected_time_in_range_pct = round(
+            min(100.0, confidence_level * 100.0 + (1.0 - confidence_level) * 25.0),
+            2,
+        )
+
+        # ── Capital efficiency vs full-range ─────────────────────────
+        full_range_width = 887220 * 2  # tick_min to tick_max in Uniswap V3/V4
+        capital_efficiency = round(full_range_width / max(width_ticks, 1), 2)
+
+        return {
+            "tick_lower": tick_lower,
+            "tick_upper": tick_upper,
+            "width_ticks": width_ticks,
+            "current_tick": current_tick,
+            "confidence_level": confidence_level,
+            "norm_z": norm_z,
+            "daily_sigma": round(daily_sigma, 6),
+            "time_horizon_days": time_horizon,
+            "expected_time_in_range_pct": expected_time_in_range_pct,
+            "capital_efficiency": capital_efficiency,
+            "tick_spacing": tick_spacing,
+        }
+
+    def score_liquidity_efficiency(
+        self,
+        tick_lower: int,
+        tick_upper: int,
+        current_tick: int,
+        pool_volume_24h: float,
+        position_liquidity: float,
+    ) -> dict:
+        """Score the efficiency of a concentrated-liquidity position (0-100).
+
+        The composite score blends four sub-scores:
+
+        * **in_range** (25 pts) -- whether the current tick falls within the
+          position boundaries.
+        * **range_utilization** (25 pts) -- how centred the current tick is
+          inside the range.  A tick at the exact centre scores the full 25;
+          a tick at the boundary scores 0.
+        * **capital_efficiency** (25 pts) -- narrower ranges earn more fees
+          per unit of capital.  Scored via log-scale of the concentration
+          multiplier (full_range_width / range_width), capped at 4 000x.
+        * **fee_capture_estimate** (25 pts) -- estimated daily fee revenue
+          relative to position value, linearly scaled so that a 0.1 %/day
+          capture rate maps to the full 25 points.
+
+        Args:
+            tick_lower:          Position lower tick.
+            tick_upper:          Position upper tick.
+            current_tick:        Current pool tick.
+            pool_volume_24h:     Pool 24-hour trading volume in USD.
+            position_liquidity:  Position value in USD.
+
+        Returns:
+            dict with keys:
+                score                  - Composite score (0 -- 100).
+                breakdown              - Dict of the four sub-scores.
+                in_range               - Whether current tick is inside range.
+                range_utilization      - 0-1 measure of how centred the tick is.
+                capital_efficiency     - Multiplier vs full-range position.
+                fee_capture_estimate   - Estimated daily fee capture in USD.
+        """
+        range_width = tick_upper - tick_lower
+        if range_width <= 0 or position_liquidity <= 0:
+            return {"error": "invalid_range_or_liquidity"}
+
+        full_range_width = 887220 * 2  # tick_min to tick_max
+
+        # ── 1. In-range check (25 pts) ────────────────────────────────
+        in_range = tick_lower <= current_tick <= tick_upper
+        in_range_pts = 25.0 if in_range else 0.0
+
+        # ── 2. Range utilization (25 pts) ─────────────────────────────
+        center = (tick_lower + tick_upper) / 2.0
+        half_width = range_width / 2.0
+        distance_ratio = abs(current_tick - center) / half_width if half_width else 1.0
+        # Clamp to [0, 1]; 0 = perfectly centred, 1 = at boundary/outside
+        distance_ratio = min(distance_ratio, 1.0)
+        range_utilization = 1.0 - distance_ratio  # 1 = centred
+        range_utilization_pts = range_utilization * 25.0
+
+        # ── 3. Capital efficiency (25 pts) ────────────────────────────
+        concentration_multiplier = min(full_range_width / max(range_width, 1), 4000.0)
+        # log10 scale: 1x → 0 pts, 4000x → 25 pts
+        cap_eff_pts = min(
+            25.0,
+            math.log10(max(concentration_multiplier, 1.0))
+            / math.log10(4000.0)
+            * 25.0,
+        )
+
+        # ── 4. Fee capture estimate (25 pts) ─────────────────────────
+        base_fee_rate = 0.003  # 0.30 % fee tier assumption
+        if in_range:
+            # Position captures fees proportional to its share of active
+            # liquidity, approximated by concentration multiplier.
+            daily_fees = pool_volume_24h * base_fee_rate / max(concentration_multiplier, 1.0)
+            fee_capture_daily = daily_fees * (position_liquidity / max(position_liquidity, 1.0))
+        else:
+            fee_capture_daily = 0.0
+
+        fee_capture_rate = fee_capture_daily / position_liquidity  # fraction
+        # 0.1 %/day (0.001) → 25 pts
+        fee_pts = min(25.0, (fee_capture_rate / 0.001) * 25.0)
+
+        # ── Composite ─────────────────────────────────────────────────
+        composite = round(in_range_pts + range_utilization_pts + cap_eff_pts + fee_pts, 1)
+        composite = min(100.0, composite)
+
+        return {
+            "score": composite,
+            "breakdown": {
+                "in_range_pts": round(in_range_pts, 2),
+                "range_utilization_pts": round(range_utilization_pts, 2),
+                "capital_efficiency_pts": round(cap_eff_pts, 2),
+                "fee_capture_pts": round(fee_pts, 2),
+            },
+            "in_range": in_range,
+            "range_utilization": round(range_utilization, 4),
+            "capital_efficiency": round(concentration_multiplier, 2),
+            "fee_capture_estimate": round(fee_capture_daily, 4),
+            "fee_capture_rate_daily": round(fee_capture_rate, 6),
+            "estimated_apr_pct": round(fee_capture_rate * 365 * 100, 2),
+            "range_width_ticks": range_width,
+        }
+
+    def project_impermanent_loss(
+        self,
+        entry_price: float,
+        current_price: float,
+        tick_lower: int = 0,
+        tick_upper: int = 0,
+    ) -> dict:
+        """Project impermanent loss for a concentrated liquidity position.
+
+        IL Formula (full range):
+            IL = 2 * sqrt(price_ratio) / (1 + price_ratio) - 1
+
+        For concentrated liquidity, IL is amplified by the concentration factor.
+
+        Args:
+            entry_price:   Price at position entry.
+            current_price: Current price.
+            tick_lower:    Position lower tick (0 for full-range calculation).
+            tick_upper:    Position upper tick (0 for full-range calculation).
+
+        Returns:
+            dict with il_pct, il_amplified_pct (for concentrated),
+            breakeven_fees_pct, and price_ratio.
+        """
+        if entry_price <= 0:
+            return {"error": "entry_price must be positive"}
+
+        price_ratio = current_price / entry_price
+
+        # Full-range IL
+        if price_ratio > 0:
+            sqrt_ratio = math.sqrt(price_ratio)
+            il_full_range = 2 * sqrt_ratio / (1 + price_ratio) - 1
+        else:
+            il_full_range = -1.0
+
+        il_pct = abs(il_full_range) * 100
+
+        # Concentrated IL amplification
+        if tick_lower != 0 and tick_upper != 0:
+            range_width = tick_upper - tick_lower
+            full_range = 887220 * 2
+            concentration = full_range / max(range_width, 1)
+            il_amplified_pct = il_pct * min(math.sqrt(concentration), 50)
+        else:
+            concentration = 1.0
+            il_amplified_pct = il_pct
+
+        # Fees needed to offset IL
+        breakeven_fees_pct = il_amplified_pct
+
+        return {
+            "price_ratio": round(price_ratio, 6),
+            "il_full_range_pct": round(il_pct, 4),
+            "il_amplified_pct": round(il_amplified_pct, 4),
+            "concentration_factor": round(concentration, 1),
+            "breakeven_fees_pct": round(breakeven_fees_pct, 4),
+            "price_change_pct": round((price_ratio - 1) * 100, 2),
+            "direction": "up" if price_ratio > 1 else "down" if price_ratio < 1 else "flat",
+        }
+
+    def compare_fee_tiers(
+        self,
+        volume_24h_usd: float,
+        volatility_pct: float,
+        liquidity_usd: float = 100_000,
+    ) -> dict:
+        """Compare expected returns across different fee tiers.
+
+        Evaluates each standard fee tier to determine which maximizes
+        fee revenue given current market conditions.
+
+        Model:
+            expected_volume_share ∝ 1 / fee_tier (lower fees attract more volume)
+            fee_revenue = volume_share * fee_rate
+            optimal_tier = argmax(fee_revenue)
+
+        Args:
+            volume_24h_usd:  Total 24h pool volume.
+            volatility_pct:  Current volatility percentage.
+            liquidity_usd:   Reference liquidity amount for APR calculation.
+
+        Returns:
+            dict with tier comparisons and recommended tier.
+        """
+        tiers = {
+            "0.01%": 100,
+            "0.05%": 500,
+            "0.30%": 3000,
+            "1.00%": 10000,
+            "dynamic": 0x800000,
+        }
+
+        comparisons = []
+        best_tier = None
+        best_apr = -1
+
+        for tier_name, fee_bps in tiers.items():
+            if tier_name == "dynamic":
+                # Dynamic fee: estimate average fee based on volatility
+                # Low vol -> low fee, high vol -> high fee
+                estimated_fee_bps = int(500 + volatility_pct * 10)
+                estimated_fee_bps = max(500, min(estimated_fee_bps, 10000))
+                fee_rate = estimated_fee_bps / 1_000_000
+            else:
+                fee_rate = fee_bps / 1_000_000
+
+            # Volume elasticity: lower fees capture proportionally more volume
+            # Elasticity model: volume_share ~ (reference_fee / this_fee) ^ 0.5
+            reference_fee = 3000 / 1_000_000  # 0.3% as reference
+            if fee_rate > 0:
+                volume_multiplier = math.sqrt(reference_fee / fee_rate)
+            else:
+                volume_multiplier = 1.0
+
+            captured_volume = volume_24h_usd * volume_multiplier
+            daily_fees = captured_volume * fee_rate
+            apr_pct = (daily_fees / max(liquidity_usd, 1)) * 365 * 100
+
+            entry = {
+                "tier": tier_name,
+                "fee_bps": fee_bps if tier_name != "dynamic" else estimated_fee_bps,
+                "fee_rate": round(fee_rate, 6),
+                "volume_multiplier": round(volume_multiplier, 3),
+                "daily_fees_usd": round(daily_fees, 2),
+                "apr_pct": round(apr_pct, 2),
+            }
+            comparisons.append(entry)
+
+            if apr_pct > best_apr:
+                best_apr = apr_pct
+                best_tier = tier_name
+
+        # For Genesis hook pools, dynamic is preferred when vol > 3%
+        genesis_recommended = "dynamic" if volatility_pct > 3.0 else best_tier
+
+        return {
+            "volume_24h_usd": volume_24h_usd,
+            "volatility_pct": volatility_pct,
+            "liquidity_usd": liquidity_usd,
+            "comparisons": comparisons,
+            "best_static_tier": best_tier,
+            "genesis_recommended": genesis_recommended,
+            "dynamic_advantage": genesis_recommended == "dynamic",
         }
 
     # ── Integration Summary ───────────────────────────────────────────
