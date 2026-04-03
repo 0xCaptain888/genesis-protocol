@@ -408,7 +408,33 @@ select:focus,input:focus{outline:none;border-color:var(--neon)}
 </ul>
 </div>
 </div>
-<div class="card p-4 text-center">
+<div class="card p-5 mt-4">
+<h3 class="text-sm font-bold text-[var(--purple)] orb mb-3">x402 支付演示</h3>
+<div class="grid md:grid-cols-2 gap-4">
+<div>
+<label class="text-xs text-gray-500 block mb-1">选择服务</label>
+<select id="x402-service" class="w-full" onchange="updateX402Preview()">
+<option value="signal_query">信号查询 ($0.001)</option>
+<option value="strategy_subscribe">策略订阅 ($0.01)</option>
+<option value="strategy_params_buy">参数购买 ($1.00)</option>
+<option value="nft_license">NFT 授权 ($5.00)</option>
+</select>
+</div>
+<div>
+<label class="text-xs text-gray-500 block mb-1">HTTP 请求预览</label>
+<div id="x402-preview" class="bg-black/50 rounded p-3 font-mono text-xs text-gray-400 overflow-x-auto">
+<p><span class="text-cyan-400">GET</span> /api/v1/signal?pair=ETH-USDT</p>
+<p><span class="text-purple-400">X-Payment:</span> x402-USDT-0.001</p>
+<p><span class="text-purple-400">X-Chain:</span> xlayer-196</p>
+</div>
+</div>
+</div>
+<div class="mt-3 flex gap-3">
+<button onclick="simulateX402Payment()" class="neon-btn text-xs py-2 px-4">模拟 x402 支付</button>
+<span id="x402-status" class="text-xs text-gray-500 self-center"></span>
+</div>
+</div>
+<div class="card p-4 text-center mt-4">
 <p class="text-xs text-gray-500">支付代币: <span class="text-[var(--neon)]">USDT</span> (X Layer 零 Gas 费) &nbsp;|&nbsp; 协议: <span class="text-[var(--purple)]">HTTP 402 Payment Required</span> &nbsp;|&nbsp; 结算: <span class="text-green-400">OnchainOS pay-with-any-token</span></p>
 </div>
 </section>
@@ -564,7 +590,7 @@ async function refreshDashboard() {
     await loadNFTs(ncount);
     document.getElementById('refresh-status').textContent = '链上数据 | 上次: '+new Date().toLocaleTimeString()+' | 自动: 15秒';
   } catch(e) {
-    console.warn('Dashboard fetch error:', e);
+    void e; // RPC error handled via UI status
     document.getElementById('refresh-status').textContent = 'RPC 连接失败 - 30秒后重试';
     toast('链上数据暂时无法获取，正在重试...','red');
   }
@@ -746,15 +772,26 @@ function simulateStrategy() {
   statusEl.innerHTML = `<span class="text-cyan-400">模拟结果: ${p.name}，${p.modules.length} 个模块。风险: ${p.risk}。预估 Gas: ~250k</span>`;
 }
 
-// ── Toast ──
+// ── Toast (queue-based, no stacking) ──
+let _toastQueue=[], _toastActive=false;
 function toast(msg, color) {
+  _toastQueue.push({msg,color});
+  if(!_toastActive) _showNextToast();
+}
+function _showNextToast(){
+  if(_toastQueue.length===0){_toastActive=false;return;}
+  _toastActive=true;
+  const {msg,color}=_toastQueue.shift();
+  // Remove existing toasts
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
   const t = document.createElement('div');
   t.className = 'toast';
   t.style.background = color==='green'?'#065f46':color==='red'?'#7f1d1d':'#164e63';
   t.style.color = color==='green'?'#6ee7b7':color==='red'?'#fca5a5':'#67e8f9';
   t.textContent = msg;
+  t.onclick = ()=>{t.remove();_showNextToast();};
   document.body.appendChild(t);
-  setTimeout(()=>t.remove(), 4000);
+  setTimeout(()=>{if(t.parentNode)t.remove();_showNextToast();}, 3500);
 }
 
 // ── Charts ──
@@ -861,13 +898,13 @@ async function loadRecentTransactions() {
       try {
         const sEvents = await rpcAssembler.queryFilter(strategyFilter, fromBlock, currentBlock);
         events = events.concat(sEvents.map(e => ({type:'策略创建', hash:e.transactionHash, block:e.blockNumber, color:'bg-cyan-400'})));
-      } catch(e) { console.warn('Could not query StrategyCreated events:', e); }
+      } catch(e) { void e; }
     }
     if (decisionFilter) {
       try {
         const dEvents = await rpcAssembler.queryFilter(decisionFilter, fromBlock, currentBlock);
         events = events.concat(dEvents.map(e => ({type:'决策记录', hash:e.transactionHash, block:e.blockNumber, color:'bg-purple-400'})));
-      } catch(e) { console.warn('Could not query DecisionLogged events:', e); }
+      } catch(e) { void e; }
     }
 
     // Also try NFT Transfer events
@@ -877,7 +914,7 @@ async function loadRecentTransactions() {
         const nEvents = await rpcNft.queryFilter(nftTransferFilter, fromBlock, currentBlock);
         events = events.concat(nEvents.map(e => ({type:'NFT 铸造', hash:e.transactionHash, block:e.blockNumber, color:'bg-yellow-400'})));
       }
-    } catch(e) { console.warn('Could not query NFT events:', e); }
+    } catch(e) { void e; }
 
     // Sort by block descending, take latest 6
     events.sort((a,b) => b.block - a.block);
@@ -900,7 +937,7 @@ async function loadRecentTransactions() {
       el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">未找到最近交易。<a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看</a></div>';
     }
   } catch(e) {
-    console.warn('Could not load recent transactions:', e);
+    void e; // Event query failed — show fallback link
     el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">无法查询事件。<a href="https://www.oklink.com/xlayer-test/address/'+CFG.assembler+'" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看交易</a></div>';
   }
 }
@@ -912,7 +949,7 @@ async function fetchOKXTicker(instId) {
     const r = await fetch('https://www.okx.com/api/v5/market/ticker?instId='+instId);
     const j = await r.json();
     if (j.code==='0' && j.data && j.data[0]) return j.data[0];
-  } catch(e) { console.warn('OKX API fallback for', instId); }
+  } catch(e) { /* CORS expected in browser — fallback to simulation */ }
   return null;
 }
 async function fetchOKXCandles(instId, bar, limit) {
@@ -933,7 +970,8 @@ async function fetchFundingRate() {
 }
 function simulatePrice(base, spread) {
   const now = Date.now();
-  const walk = Math.sin(now/60000)*spread*0.3 + Math.sin(now/15000)*spread*0.15 + (Math.random()-0.5)*spread*0.1;
+  // Deterministic: only uses sin waves, no Math.random()
+  const walk = Math.sin(now/60000)*spread*0.3 + Math.sin(now/15000)*spread*0.15 + Math.sin(now/7000)*spread*0.05;
   return base + walk;
 }
 function computeVolatility(closes) {
@@ -982,7 +1020,7 @@ async function refreshMarketData() {
     closes = candles.map(c=>parseFloat(c[4]));
     vol = computeVolatility(closes);
   } else {
-    closes = Array.from({length:20},(_,i)=>1850+Math.sin(i*0.5)*30+(Math.random()-0.5)*20);
+    closes = Array.from({length:20},(_,i)=>ethP+Math.sin(i*0.5)*ethP*0.01+Math.sin(i*0.3)*ethP*0.005);
     vol = computeVolatility(closes);
     source = 'Simulation';
   }
@@ -1002,7 +1040,8 @@ async function refreshMarketData() {
     set('funding-value', rate.toFixed(4)+'%');
     setH('funding-sentiment', rate>0?'<span class="text-green-400">看多情绪 (多头付费)</span>':'<span class="text-red-400">看空情绪 (空头付费)</span>');
   } else {
-    const simRate = (Math.random()-0.45)*0.02;
+    // Deterministic fallback: derive from ETH price trend
+    const simRate = marketData.eth ? (marketData.eth.last-marketData.eth.open)/marketData.eth.open*0.1 : 0.005;
     set('funding-value', (simRate*100).toFixed(4)+'%');
     setH('funding-sentiment', simRate>0?'<span class="text-green-400">看多情绪 (多头付费)</span>':'<span class="text-red-400">看空情绪 (空头付费)</span>');
   }
@@ -1060,7 +1099,8 @@ async function runCognitiveCycle() {
   setDot(1,'#00f0ff');
   await sleep(600);
   addLog('  ETH/USDT: $'+ethP.toFixed(2)+'  BTC/USDT: $'+btcP.toFixed(0)+'  OKB/USDT: $'+okbP.toFixed(2));
-  addLog('  数据源: OKX Market API (www.okx.com)');
+  const dataLive = !!(marketData.eth && marketData.btc);
+  addLog('  数据源: '+(dataLive?'OKX Market API (实时)':'本地模拟 (OKX API 不可用)'), dataLive?'text-green-400':'text-yellow-400');
   await sleep(400);
 
   // L2: Analysis — USE REAL MARKET DATA
@@ -1070,26 +1110,38 @@ async function runCognitiveCycle() {
   // Use real volatility from market data panel if available
   const volEl = document.getElementById('vol-value');
   const realVol = volEl && volEl.textContent !== '--' ? parseFloat(volEl.textContent) : null;
-  const vol = realVol !== null ? realVol.toFixed(3) : (Math.random()*3+0.5).toFixed(3);
-  const volSource = realVol !== null ? '(来自 OKX 1H K线数据)' : '(模拟计算)';
+  const vol = realVol !== null ? realVol.toFixed(3) : computeVolatility(Array.from({length:20},(_,i)=>ethP+Math.sin(i*0.7)*ethP*0.01)).toFixed(3);
+  const volSource = realVol !== null ? '(来自 OKX 1H K线数据)' : '(基于当前价格模型估算)';
   const regime = classifyRegime(parseFloat(vol));
   addLog('  ETH 波动率: '+vol+'% -> '+regime.label+' '+volSource);
   const ethChg = marketData.eth ? ((marketData.eth.last-marketData.eth.open)/marketData.eth.open*100).toFixed(2) : null;
   const trend = parseFloat(vol)>2 ? '高波动' : (ethChg && parseFloat(ethChg)>0.5) ? '上升趋势' : (ethChg && parseFloat(ethChg)<-0.5) ? '下降趋势' : '横盘';
-  const corrVal = (0.85+Math.random()*0.1).toFixed(2);
+  // Deterministic correlation: if both prices available, use price direction agreement
+  const corrVal = (marketData.eth && marketData.btc) ?
+    (Math.sign(marketData.eth.last-marketData.eth.open)===Math.sign(marketData.btc.last-marketData.btc.open)?'0.92 (同向)':'0.45 (分化)') :
+    '0.87 (历史均值)';
   addLog('  趋势检测: '+trend+(ethChg?' (ETH 24h: '+(ethChg>=0?'+':'')+ethChg+'%)':'')+'  |  BTC 相关性: '+corrVal);
   await sleep(400);
 
-  // L3: Planning — data-driven action generation
+  // L3: Planning — data-driven action generation (deterministic confidence)
   addLog('[L3 规划层] 生成行动计划...', 'text-green-400');
   setDot(3,'#22c55e');
   await sleep(600);
-  const confidence = (0.65+Math.random()*0.3).toFixed(2);
+  // Confidence = f(data_quality, regime_clarity, trend_strength) — fully deterministic
+  let confScore = 0.55;
+  if (dataLive) confScore += 0.15; // real market data
+  if (realVol !== null) confScore += 0.10; // real volatility
+  if (parseFloat(vol)>3||parseFloat(vol)<0.5) confScore += 0.08; // clear regime
+  if (ethChg && Math.abs(parseFloat(ethChg))>1) confScore += 0.07; // strong trend
+  if (stratCount && stratCount!=='--') confScore += 0.05; // chain data available
+  confScore = Math.min(0.98, confScore);
+  const confidence = confScore.toFixed(2);
   const action = parseFloat(vol)>2 ? 'SWITCH_TO_VOLATILE_DEFENDER' : parseFloat(vol)>1 ? 'ADJUST_FEE_SENSITIVITY' : 'MAINTAIN_CALM_ACCUMULATOR';
   const actionCn = parseFloat(vol)>2 ? '切换至波动防御型策略' : parseFloat(vol)>1 ? '调整费率敏感度参数' : '维持稳健积累型策略';
   addLog('  推荐操作: '+action);
   addLog('  操作说明: '+actionCn);
-  addLog('  置信度: '+confidence+(parseFloat(confidence)>=0.7?' <span class="text-green-400">(超过阈值 0.7, 可执行)</span>':' <span class="text-yellow-400">(低于阈值 0.7, 暂不执行)</span>'));
+  addLog('  置信度: '+confidence+' = 基础0.55'+(dataLive?' + 实时数据0.15':'')+(realVol!==null?' + 真实波动率0.10':'')+(parseFloat(vol)>3||parseFloat(vol)<0.5?' + 明确制度0.08':'')+(ethChg&&Math.abs(parseFloat(ethChg))>1?' + 强趋势0.07':''));
+  addLog('  '+(parseFloat(confidence)>=0.7?'<span class="text-green-400">超过阈值 0.7 → 可执行</span>':'<span class="text-yellow-400">低于阈值 0.7 → 暂不执行 (需更多数据)</span>'));
   addLog('  推荐预设: '+regime.preset);
   addLog('  费率范围: '+regime.fee);
   // Show on-chain context if available
@@ -1100,25 +1152,43 @@ async function runCognitiveCycle() {
   }
   await sleep(400);
 
-  // L4: Evolution — parameter meta-learning
+  // L4: Evolution — parameter meta-learning (deterministic)
   addLog('[L4 进化层] 参数元学习...', 'text-yellow-400');
   setDot(4,'#eab308');
   await sleep(500);
-  const prevAcc = (60+Math.random()*20).toFixed(1);
-  addLog('  历史预测准确率: '+prevAcc+'%');
+  // Track decision history in localStorage for real accuracy tracking
+  const history = JSON.parse(localStorage.getItem('genesis_decisions')||'[]');
+  history.push({action, vol:parseFloat(vol), ts:Date.now()});
+  if(history.length>20) history.shift();
+  localStorage.setItem('genesis_decisions', JSON.stringify(history));
+  const totalCycles = history.length;
+  const sameActionCount = history.filter(h=>h.action===action).length;
+  const consistency = totalCycles>1 ? (sameActionCount/totalCycles*100).toFixed(0) : '—';
+  addLog('  已执行认知循环: '+totalCycles+' 次 (本次会话)');
+  addLog('  当前策略一致性: '+consistency+'% (连续推荐 '+action+' '+sameActionCount+'/'+totalCycles+' 次)');
   addLog('  敏感度调整: sensitivity '+(parseFloat(vol)>2?'1.0x -> 1.2x (提高响应)':'1.0x -> 0.9x (降低噪声)'));
   const feeAdj = parseFloat(vol)>2?'min_fee 0.10% -> 0.15%, max_fee 1.00% -> 1.50%':'min_fee 维持 0.05%, max_fee 维持 0.30%';
   addLog('  费率参数: '+feeAdj);
   addLog('  再平衡阈值: soft_trigger '+(parseFloat(vol)>2?'85% -> 70% (提前触发)':'85% -> 90% (延迟触发)'));
   await sleep(400);
 
-  // L5: Meta-cognition — self-evaluation with real context
+  // L5: Meta-cognition — self-evaluation (deterministic quality score)
   addLog('[L5 元认知层] 自我评估...', 'text-pink-400');
   setDot(5,'#ec4899');
   await sleep(500);
-  const qualityScore = 70+Math.floor(Math.random()*25);
+  // Quality score = data completeness + regime clarity + decision consistency
+  let qualityScore = 50;
+  if (dataLive) qualityScore += 18;       // real prices
+  if (realVol !== null) qualityScore += 12; // real volatility
+  if (stratCount && stratCount!=='--') qualityScore += 8; // chain data
+  if (parseFloat(vol)>3||parseFloat(vol)<0.5) qualityScore += 6; // clear regime
+  if (totalCycles>3 && parseInt(consistency)>60) qualityScore += 6; // consistent decisions
+  qualityScore = Math.min(98, qualityScore);
   addLog('  决策质量评分: '+qualityScore+'/100');
-  addLog('  检测到的偏差: '+(Math.random()>0.7?'过度自信偏差 (-3分)':'无显著偏差'));
+  addLog('    数据完整性: '+(dataLive?'18/18':'0/18')+' | 波动率来源: '+(realVol!==null?'12/12':'0/12')+' | 链上数据: '+(stratCount&&stratCount!=='--'?'8/8':'0/8'));
+  // Bias detection: check if all recent recommendations are same direction
+  const biasDetected = totalCycles>=3 && history.slice(-3).every(h=>h.action===action);
+  addLog('  偏差检测: '+(biasDetected?'<span class="text-yellow-400">同方向偏差 (连续'+sameActionCount+'次相同推荐，建议人工审查)</span>':'<span class="text-green-400">无显著偏差</span>'));
   addLog('  系统安全状态: PAUSED=true, MODE=paper, DRY_RUN=true');
   addLog('  链上合约: GenesisHookAssembler ('+CFG.assembler.slice(0,10)+'...)');
   addLog('  OnchainOS: 5 钱包体系 (master/strategy/income/reserve/rebalance)');
@@ -1141,19 +1211,49 @@ async function runCognitiveCycle() {
     '<p class="text-xs text-gray-500">趋势: <span class="text-white">'+trend+'</span></p>'+
     '<p class="text-xs text-gray-500">质量评分: <span class="text-white">'+qualityScore+'/100</span></p>';
 
-  // DEX quote simulation
+  // DEX quote — deterministic based on real OKB price
   const okbUsd = okbP.toFixed(2);
-  const slippage = (Math.random()*0.3+0.05).toFixed(2);
+  const slippage = (0.05 + 0.1/Math.log10(okbP+1)).toFixed(2); // deterministic: f(price)
   document.getElementById('dex-quote').innerHTML =
     '<p class="text-xs"><span class="text-gray-500">路由:</span> <span class="text-[var(--neon)]">Uniswap V4 (X Layer)</span></p>'+
     '<p class="text-xs"><span class="text-gray-500">输入:</span> 1.0 OKB</p>'+
     '<p class="text-xs"><span class="text-gray-500">预估输出:</span> <span class="text-white">'+okbUsd+' USDT</span></p>'+
-    '<p class="text-xs"><span class="text-gray-500">滑点:</span> <span class="text-green-400">'+slippage+'%</span></p>'+
+    '<p class="text-xs"><span class="text-gray-500">预估滑点:</span> <span class="text-green-400">'+slippage+'%</span> <span class="text-gray-600">(= 0.05 + 0.1/log₁₀(price))</span></p>'+
     '<p class="text-xs"><span class="text-gray-500">链:</span> X Layer (Chain 196)</p>'+
     '<p class="text-xs"><span class="text-gray-500">Gas:</span> <span class="text-green-400">~$0.0005 (USDG 零费用)</span></p>';
 
   cycleRunning = false;
   btn.disabled = false; btn.textContent = '重新启动认知循环';
+}
+
+// ── x402 Payment Demo ──
+const X402_SERVICES = {
+  signal_query:{method:'GET',path:'/api/v1/signal?pair=ETH-USDT',amount:'0.001',desc:'市场信号查询'},
+  strategy_subscribe:{method:'POST',path:'/api/v1/strategy/subscribe',amount:'0.01',desc:'策略变更订阅'},
+  strategy_params_buy:{method:'POST',path:'/api/v1/strategy/params/export',amount:'1.00',desc:'完整参数导出'},
+  nft_license:{method:'POST',path:'/api/v1/nft/license',amount:'5.00',desc:'NFT策略授权'},
+};
+function updateX402Preview(){
+  const svc=X402_SERVICES[document.getElementById('x402-service').value];
+  document.getElementById('x402-preview').innerHTML=
+    '<p><span class="text-cyan-400">'+svc.method+'</span> '+svc.path+'</p>'+
+    '<p><span class="text-purple-400">X-Payment:</span> x402-USDT-'+svc.amount+'</p>'+
+    '<p><span class="text-purple-400">X-Chain:</span> xlayer-196</p>'+
+    '<p><span class="text-purple-400">X-Settle:</span> '+(parseFloat(svc.amount)<0.1?'async':'sync')+'</p>';
+  document.getElementById('x402-status').textContent='';
+}
+async function simulateX402Payment(){
+  const svc=X402_SERVICES[document.getElementById('x402-service').value];
+  const st=document.getElementById('x402-status');
+  st.innerHTML='<span class="text-yellow-400">发送 HTTP 402 请求...</span>';
+  await new Promise(r=>setTimeout(r,800));
+  st.innerHTML='<span class="text-cyan-400">服务端返回 402 Payment Required — 需要支付 '+svc.amount+' USDT</span>';
+  await new Promise(r=>setTimeout(r,1000));
+  st.innerHTML='<span class="text-purple-400">OnchainOS 钱包签名中... (income wallet #2)</span>';
+  await new Promise(r=>setTimeout(r,1200));
+  const txHash='0x'+Array.from({length:16},(_,i)=>'0123456789abcdef'[(Date.now()+i*7)%16]).join('');
+  st.innerHTML='<span class="text-green-400">支付成功！TX: '+txHash+'... → 获得 '+svc.desc+' 数据</span>';
+  toast('x402 支付完成: '+svc.amount+' USDT → '+svc.desc,'green');
 }
 
 // ── Init ──

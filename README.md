@@ -30,6 +30,11 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 
 ## 架构概述
 
+![Genesis Protocol Architecture](docs/architecture.svg)
+
+<details>
+<summary>文本版架构图</summary>
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    AI Agent (Python)                     │
@@ -74,6 +79,8 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 │  └──────────────┘  └──────────────────────────┘        │
 └─────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 ---
 
