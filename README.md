@@ -19,7 +19,9 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 
 ### 核心亮点
 
-- **Hook 模板引擎** -- 3 个可组合 Solidity 模块（DynamicFee、MEVProtection、AutoRebalance），由 AI 组装成自定义 V4 Hook 配置
+- **Hook 模板引擎** -- 5 个可组合 Solidity 模块（DynamicFee、MEVProtection、AutoRebalance、LiquidityShield、Oracle），由 AI 组装成自定义 V4 Hook 配置
+- **5 个 Uniswap AI 插件集成** -- uniswap-hooks、uniswap-trading、uniswap-cca、uniswap-driver、pay-with-any-token
+- **6 个 Onchain OS Skill 集成** -- wallet、market、trade、security、payment、defi-invest
 - **5 层 AI 认知架构** -- 感知层、分析层、规划层、进化层、元认知层
 - **策略 NFT** -- 经验证的策略铸造为 ERC-721，全链上元数据
 - **链上决策日志** -- 每个 AI 决策都带推理哈希记录在链上，完全可审计
@@ -70,6 +72,10 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 │  │  │DynamicFee│ │   MEV    │ │AutoRebalance │   │     │
 │  │  │ 动态费率 │ │ MEV防护  │ │  自动再平衡  │   │     │
 │  │  └──────────┘ └──────────┘ └──────────────┘   │     │
+│  │  ┌──────────────────┐ ┌──────────────────┐    │     │
+│  │  │LiquidityShield   │ │     Oracle       │    │     │
+│  │  │ JIT流动性保护    │ │  TWAP预言机      │    │     │
+│  │  └──────────────────┘ └──────────────────┘    │     │
 │  └────────────────────────────────────────────────┘     │
 │                                                         │
 │  ┌──────────────┐  ┌──────────────────────────┐        │
@@ -176,6 +182,8 @@ Genesis 以 Uniswap V4 作为核心 DeFi 原语：
 | **uniswap-v4-quoter** | 预交换报价用于滑点估算 -- 规划层用其模拟策略执行结果 |
 | **uniswap-pay-with-any-token** | 接受任意 ERC-20 代币的 x402 支付 -- 结算前通过 Uniswap 自动兑换为 USDT，实现无摩擦变现 |
 | **uniswap-v4-security** | V4 Hook 安全验证 -- 验证 Hook 地址的权限标志（BEFORE_SWAP\|AFTER_SWAP），确保 beforeSwapReturnDelta 未启用（防止 rug pull 风险），遵循 v4-security-foundations 安全规范 |
+| **uniswap-cca** | CCA (Conditional Contingent Auction) -- 当 MEV 保护模块检测到可提取价值时，通过密封竞价拍卖捕获该价值，转为 LP 收入而非流失给搜索者 |
+| **uniswap-driver** | 流动性规划与 Swap 路由优化 -- 为 AutoRebalance 模块提供最优 tick 范围、费率层级选择和多跳路径规划 |
 
 ---
 
@@ -202,6 +210,8 @@ Genesis 以 Uniswap V4 作为核心 DeFi 原语：
 | **DynamicFeeModule** | 费率 = f(波动率)。范围 0.05%-1.00%，含高低区间阈值。数据过期 1 小时后回退至最大费率。 |
 | **MEVProtectionModule** | 按区块追踪 swap 模式。通过计数阈值、成交量阈值和跨地址买卖模式检测三明治攻击。可处罚或阻断。 |
 | **AutoRebalanceModule** | 监控头寸边界，发出 `RebalanceNeeded` 事件供链下执行。三种触发类型：硬触发、软触发、IL 阈值。三种策略：立即执行、TWAP、阈值累积。 |
+| **LiquidityShieldModule** | JIT 流动性保护。估算 swap 的价格影响，当影响超过阈值（默认 50 bps）时应用 shield fee。按区块追踪累计影响，防止流动性抽空攻击。 |
+| **OracleModule** | 链上 TWAP 预言机。维护价格观测环形缓冲区，支持可配置窗口的时间加权平均价格查询。将实现波动率估计反馈给 DynamicFeeModule。 |
 
 **StrategyNFT** -- 最小化 ERC-721（无 OpenZeppelin 依赖）。链上元数据包括：模块组合、所有参数、P&L、swap 次数、成交量、决策次数、铸造时的市场状况。完全可验证 -- 不依赖 IPFS。
 
@@ -212,6 +222,7 @@ Genesis 以 Uniswap V4 作为核心 DeFi 原语：
 | `calm_accumulator` | 低波动率，横盘 | Fee + Rebalance | 低费率 (0.01-0.30%) 吸引交易量 |
 | `volatile_defender` | 高波动率，任意趋势 | Fee + MEV + Rebalance | 高费率 (0.10-1.50%)，启用 MEV 阻断 |
 | `trend_rider` | 中波动率，趋势行情 | Fee + MEV + Rebalance | TWAP 再平衡，衰减费率敏感度 |
+| `full_defense` | 极端波动率，任意趋势 | Fee + MEV + Rebalance + Shield + Oracle | 全部 5 模块，最大保护 |
 
 ### 安全默认值
 
@@ -284,11 +295,11 @@ python3 demo.py
 | 指标 | 数值 |
 |------|------|
 | 已创建策略 | 9+ |
-| 决策日志条目 | 102+ |
+| 决策日志条目 | 134+ |
 | 处理 Swap | 24+ (含 V4 Hook 模块分发) |
 | 铸造策略 NFT | 5 |
 | 自主 Agent 循环 | 6（含参数进化） |
-| 总交易数 | 170+ |
+| 总交易数 | 200+ |
 
 ---
 
@@ -365,7 +376,9 @@ genesis-protocol/
 │   │   └── modules/
 │   │       ├── DynamicFeeModule.sol   波动率响应费率
 │   │       ├── MEVProtectionModule.sol 三明治攻击检测
-│   │       └── AutoRebalanceModule.sol IL 感知头寸管理
+│   │       ├── AutoRebalanceModule.sol IL 感知头寸管理
+│   │       ├── LiquidityShieldModule.sol JIT 流动性保护
+│   │       └── OracleModule.sol       链上 TWAP 预言机
 │   ├── script/
 │   │   ├── Deploy.sol                 部署脚本
 │   │   ├── DeployMainnet.sol          X Layer 主网一键部署
@@ -388,6 +401,9 @@ genesis-protocol/
 │       ├── payment_handler.py        x402 支付 + 任意代币支付
 │       ├── security_scanner.py       代币安全扫描
 │       ├── uniswap_skill.py          Uniswap AI Skill 集成
+│       ├── uniswap_cca.py            CCA 密封竞价拍卖集成
+│       ├── uniswap_driver.py         流动性规划与路由优化
+│       ├── defi_analyzer.py          DeFi 协议分析器
 │       ├── multi_agent.py            多 Agent 协调器
 │       └── main.py                    CLI 入口
 │
@@ -398,7 +414,7 @@ genesis-protocol/
 │   ├── test_okx_api_live.py          OKX DEX API 集成测试
 │   └── mine_hook_address.py          CREATE2 地址挖矿
 │
-└── tests/                             Python 测试套件 (56 个测试)
+└── tests/                             Python 测试套件 (147 个测试)
     ├── test_config.py                 安全默认值和结构验证
     ├── test_decision_journal.py       决策日志和哈希计算
     ├── test_nft_minter.py            NFT 资格检查
@@ -430,7 +446,7 @@ forge test -vv  # 43 个测试全部通过
 
 ```bash
 pip install -r requirements.txt
-python -m pytest tests/ -v  # 56 个测试全部通过
+python -m pytest tests/ -v  # 147 个测试全部通过
 ```
 
 ### 运行演示

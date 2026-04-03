@@ -6,6 +6,8 @@ import {GenesisHookAssembler} from "../src/GenesisHookAssembler.sol";
 import {DynamicFeeModule} from "../src/modules/DynamicFeeModule.sol";
 import {MEVProtectionModule} from "../src/modules/MEVProtectionModule.sol";
 import {AutoRebalanceModule} from "../src/modules/AutoRebalanceModule.sol";
+import {LiquidityShieldModule} from "../src/modules/LiquidityShieldModule.sol";
+import {OracleModule} from "../src/modules/OracleModule.sol";
 import {StrategyNFT} from "../src/StrategyNFT.sol";
 
 /// @title DeployMainnet - Deploy Genesis Protocol to X Layer Mainnet (Chain 196)
@@ -59,15 +61,34 @@ contract DeployMainnet is Script {
         );
         console.log("AutoRebalanceModule:", address(rebalModule));
 
-        // 5. Deploy StrategyNFT
+        // 5. Deploy LiquidityShieldModule
+        LiquidityShieldModule shieldModule = new LiquidityShieldModule(
+            address(assembler),
+            50,     // maxImpactBps 0.50% impact threshold
+            15000,  // shieldFeeMultiplier 1.5x
+            500     // blockImpactCap 5.00% cumulative per block
+        );
+        console.log("LiquidityShieldModule:", address(shieldModule));
+
+        // 6. Deploy OracleModule
+        OracleModule oracleModule = new OracleModule(
+            address(assembler),
+            1800,   // observationWindow 30 minutes
+            120     // maxObservations (ring buffer size)
+        );
+        console.log("OracleModule:", address(oracleModule));
+
+        // 7. Deploy StrategyNFT
         StrategyNFT nft = new StrategyNFT(deployer);
         console.log("StrategyNFT:", address(nft));
 
-        // 6. Register modules
+        // 8. Register modules
         assembler.registerModule(address(feeModule));
         assembler.registerModule(address(mevModule));
         assembler.registerModule(address(rebalModule));
-        console.log("All modules registered.");
+        assembler.registerModule(address(shieldModule));
+        assembler.registerModule(address(oracleModule));
+        console.log("All modules registered (5 total).");
 
         vm.stopBroadcast();
 

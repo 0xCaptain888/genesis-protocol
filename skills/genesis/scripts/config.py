@@ -66,6 +66,23 @@ AVAILABLE_MODULES = {
             "strategy": 0,              # 0=IMMEDIATE, 1=TWAP, 2=THRESHOLD_ACCUMULATE
         },
     },
+    "liquidity_shield": {
+        "contract": "LiquidityShieldModule",
+        "description": "JIT liquidity protection - shield fee proportional to price impact",
+        "default_params": {
+            "max_impact_bps": 50,        # 0.50% max allowed impact before shield activates
+            "shield_fee_multiplier": 15000,  # 1.5x multiplier (PRECISION=10000)
+            "block_impact_cap": 500,     # 5% cumulative per-block impact cap
+        },
+    },
+    "oracle": {
+        "contract": "OracleModule",
+        "description": "On-chain TWAP oracle with volatility estimation for fee optimization",
+        "default_params": {
+            "observation_window": 1800,  # 30 min TWAP window
+            "max_observations": 120,     # ring buffer size
+        },
+    },
 }
 
 # ─── Strategy Presets (AI selects based on market analysis) ───────────────
@@ -98,6 +115,17 @@ STRATEGY_PRESETS = {
         },
         "market_conditions": {"vol_range": [200, 600], "trend": "trending"},
     },
+    "full_defense": {
+        "description": "Maximum protection - all 5 modules active, JIT shield + TWAP oracle",
+        "modules": ["dynamic_fee", "mev_protection", "auto_rebalance", "liquidity_shield", "oracle"],
+        "overrides": {
+            "dynamic_fee": {"min_fee": 1500, "max_fee": 20000, "sensitivity": 15000},
+            "mev_protection": {"block_suspicious": True, "swap_count_threshold": 2},
+            "auto_rebalance": {"soft_trigger_pct": 65, "cooldown_period": 60},
+            "liquidity_shield": {"max_impact_bps": 30, "shield_fee_multiplier": 20000},
+        },
+        "market_conditions": {"vol_range": [800, 9999], "trend": "any"},
+    },
 }
 
 # ─── AI Decision Engine ───────────────────────────────────────────────────
@@ -123,6 +151,11 @@ DECISION_TYPES = {
     "PERFORMANCE_EVAL": "0x07",
     "META_COGNITION": "0x08",
     "NFT_MINT": "0x09",
+    "CCA_AUCTION_CREATE": "0x0A",
+    "CCA_AUCTION_SETTLE": "0x0B",
+    "LIQUIDITY_SHIELD": "0x0C",
+    "ORACLE_UPDATE": "0x0D",
+    "DEFI_BENCHMARK": "0x0E",
 }
 
 # ─── Strategy NFT ─────────────────────────────────────────────────────────
@@ -156,4 +189,37 @@ CONTRACTS = {
     "mev_protection_module": "0xA4f6ABd6F77928b06F075637ccBACA8f89e17386",
     "auto_rebalance_module": "0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee",
     "strategy_nft": "0xd969448dfc24Fe3Aff25e86db338fAB41b104319",
+    "liquidity_shield_module": "",   # Deployed with DeployMainnet.sol
+    "oracle_module": "",              # Deployed with DeployMainnet.sol
 }
+
+# ─── Mainnet Contract Addresses (X Layer Mainnet - Chain 196) ──────────────
+# Populated after mainnet deployment via DeployMainnet.sol
+MAINNET_CONTRACTS = {
+    "assembler": "",
+    "v4_hook": "",
+    "hook_deployer": "",
+    "dynamic_fee_module": "",
+    "mev_protection_module": "",
+    "auto_rebalance_module": "",
+    "liquidity_shield_module": "",
+    "oracle_module": "",
+    "strategy_nft": "",
+}
+
+# ─── Mainnet Chain Configuration ─────────────────────────────────────────
+MAINNET_CHAIN_ID = 196
+MAINNET_RPC_URL = "https://rpc.xlayer.tech"
+MAINNET_EXPLORER_URL = "https://www.oklink.com/xlayer"
+
+# ─── Uniswap V4 Core (X Layer) ──────────────────────────────────────────
+UNISWAP_V4 = {
+    "pool_manager": "0x360e68faCCca8cA495c1B759Fd9EEe466dB9Fb32",
+    "position_manager": "0x1b35d13a2e2528f192637f14b05f0dc0e7deb566",
+    "quoter": "0x3972c00f7ed4885e145823eb7c655375d275a1c5",
+    "universal_router": "0x112908daC86e20e7241B0927479Ea3Bf935d1fa0",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+}
+
+# ─── Agentic Wallet Address ──────────────────────────────────────────────
+AGENTIC_WALLET = "0xd2D120eB7cEd38551cCeFb48021067d41D6542d3"

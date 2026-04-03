@@ -8,7 +8,7 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-// SwapParams and ModifyLiquidityParams are nested in IPoolManager
+import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {GenesisV4Hook} from "../src/GenesisV4Hook.sol";
@@ -67,7 +67,7 @@ contract SwapRouter is IUnlockCallback {
     // Transient storage for callback context
     struct CallbackData {
         PoolKey key;
-        IPoolManager.SwapParams params;
+        SwapParams params;
         address sender;
     }
 
@@ -80,7 +80,7 @@ contract SwapRouter is IUnlockCallback {
     }
 
     /// @notice Execute a swap through the PoolManager unlock pattern
-    function swap(PoolKey memory key, IPoolManager.SwapParams memory params) external returns (BalanceDelta delta) {
+    function swap(PoolKey memory key, SwapParams memory params) external returns (BalanceDelta delta) {
         _callbackData = CallbackData({key: key, params: params, sender: msg.sender});
         bytes memory result = poolManager.unlock(abi.encode(key, params, msg.sender));
         delta = abi.decode(result, (BalanceDelta));
@@ -90,8 +90,8 @@ contract SwapRouter is IUnlockCallback {
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "only PM");
 
-        (PoolKey memory key, IPoolManager.SwapParams memory params, address sender) =
-            abi.decode(data, (PoolKey, IPoolManager.SwapParams, address));
+        (PoolKey memory key, SwapParams memory params, address sender) =
+            abi.decode(data, (PoolKey, SwapParams, address));
 
         BalanceDelta delta = poolManager.swap(key, params, "");
 
@@ -150,7 +150,7 @@ contract LiquidityHelper is IUnlockCallback {
         (PoolKey memory key, int24 tickLower, int24 tickUpper, int256 liquidityDelta, address sender) =
             abi.decode(data, (PoolKey, int24, int24, int256, address));
 
-        IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
+        ModifyLiquidityParams memory params = ModifyLiquidityParams({
             tickLower: tickLower,
             tickUpper: tickUpper,
             liquidityDelta: liquidityDelta,
@@ -273,7 +273,7 @@ contract V4Swap is Script {
 
         // ─── Step 7: Execute Swap ───────────────────────────────────────
         console.log("Executing swap (1 token0 -> token1)...");
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: true,
             amountSpecified: SWAP_AMOUNT, // negative = exactIn
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1

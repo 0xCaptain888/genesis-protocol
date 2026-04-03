@@ -1,13 +1,14 @@
 name: genesis
-version: 0.1.0
+version: 0.2.0
 description: >
   AI-powered Uniswap V4 Hook strategy engine for X Layer.
   Autonomously generates, deploys, and manages composable Hook strategies
-  with dynamic fees, MEV protection, and auto-rebalancing.
+  with dynamic fees, MEV protection, auto-rebalancing, JIT liquidity shielding,
+  and on-chain TWAP oracle. Supports MEV recapture via CCA auctions.
   Proven strategies are minted as on-chain Strategy NFTs.
 author: Genesis Protocol
 license: MIT
-homepage: https://github.com/genesis-protocol/genesis
+homepage: https://github.com/0xCaptain888/genesis-protocol
 tags:
   - defi
   - uniswap-v4
@@ -17,6 +18,9 @@ tags:
   - nft
   - x402
   - ai-agent
+  - mev-protection
+  - twap-oracle
+  - cca-auction
 
 platforms:
   - claude-code
@@ -34,6 +38,9 @@ dependencies:
     - onchainos-defi-invest
     - uniswap-hooks
     - uniswap-trading
+    - uniswap-cca
+    - uniswap-driver
+    - uniswap-viem
     - pay-with-any-token
 
 chain:

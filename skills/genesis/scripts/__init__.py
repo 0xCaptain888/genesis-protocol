@@ -11,4 +11,11 @@ Modules:
     strategy_manager- Strategy lifecycle orchestration
     nft_minter      - Strategy NFT minting
     genesis_engine  - 5-layer AI cognitive architecture
+    uniswap_cca     - Uniswap CCA (Conditional Contingent Auction) MEV recapture
+    uniswap_driver  - Uniswap Driver (swap & liquidity planning)
+    defi_analyzer   - DeFi yield comparison and Genesis benchmarking
 """
+
+from .uniswap_cca import UniswapCCAClient
+from .uniswap_driver import UniswapDriverClient
+from .defi_analyzer import DeFiAnalyzer
