@@ -85,27 +85,148 @@ async function connectWallet() {
 // ── Guided Tour ──
 function startGuidedTour() {
   const steps = [
-    { target: '#market', msg: '第1步: 查看 AI 实时市场感知 — 波动率、制度分类、资金费率' },
-    { target: '#ai-engine', msg: '第2步: 启动 AI 认知引擎 — 5层认知循环实时推理' },
-    { target: '#ai-decision', msg: '第3步: AI 决策面板 — 置信度、市场区间、LLM 推理链' },
-    { target: '#dashboard', msg: '第4步: 链上实时仪表盘 — 所有数据来自 X Layer 合约' },
-    { target: '#activity-timeline', msg: '第5步: 链上活动时间线 — 所有交易按时间排序' },
-    { target: '#backtest', msg: '第6步: 回测分析 — 各策略预设的历史表现对比' },
-    { target: '#strategies', msg: '第7步: 部署策略 — 连接钱包后可真实部署' },
-    { target: '#nfts', msg: '第8步: 策略 NFT — 达标策略自动铸造为链上 NFT' },
-    { target: '#x402', msg: '第9步: x402 支付协议 — AI Agent 间的链上微支付' },
+    { target: '#market',      title: 'AI 市场感知',   desc: '实时波动率监测、市场区间分类（Calm / Volatile / Trending）、永续合约资金费率，所有数据来自 OKX API。' },
+    { target: '#ai-engine',   title: 'AI 认知引擎',   desc: '5 层认知循环（感知 → 分析 → 规划 → 进化 → 元认知），点击「启动认知循环」即可观看 AI 实时推理。' },
+    { target: '#ai-decision', title: 'AI 决策面板',    desc: '决策置信度仪表盘、Bayesian 市场区间判断、LLM 推理链可视化，让 AI 的每一步决策透明可审计。' },
+    { target: '#dashboard',   title: '链上实时仪表盘', desc: '策略数、决策记录、Swap 笔数、NFT 铸造量 —— 全部实时读取自 X Layer 主网合约。' },
+    { target: '#strategies',  title: '策略管理器',     desc: '选择预设、组合 Hook 模块，连接钱包后可一键部署到 Uniswap V4，也可先模拟运行。' },
+    { target: '#journal',     title: '决策日志',       desc: '每条 AI 决策都记录在链上并可溯源，包含时间戳、策略 ID、参数快照。' },
+    { target: '#nfts',        title: '策略 NFT 画廊',  desc: '达标策略自动铸造为 ERC-721 NFT，独一无二的链上策略凭证。' },
+    { target: '#x402',        title: 'x402 支付协议',  desc: '基于 HTTP 402 的链上微支付 —— 其他 AI Agent 可付费查询信号、订阅策略或购买完整参数。' },
   ];
-  let i = 0;
-  function showStep() {
-    if (i >= steps.length) { toast('体验完成！尝试连接钱包部署策略', 'green'); return; }
-    const s = steps[i];
-    const el = document.querySelector(s.target);
-    if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-    toast(s.msg, 'cyan');
-    i++;
-    setTimeout(showStep, 4500);
+
+  let current = 0;
+  let backdropEl = null, highlightEl = null, tooltipEl = null;
+
+  function cleanup() {
+    if (backdropEl) backdropEl.remove();
+    if (highlightEl) highlightEl.remove();
+    if (tooltipEl) tooltipEl.remove();
+    backdropEl = highlightEl = tooltipEl = null;
+    document.removeEventListener('keydown', onKey);
+    window.removeEventListener('resize', reposition);
   }
-  showStep();
+
+  function onKey(e) {
+    if (e.key === 'Escape') { cleanup(); return; }
+    if (e.key === 'ArrowRight' || e.key === 'Enter') { goNext(); return; }
+    if (e.key === 'ArrowLeft') { goBack(); return; }
+  }
+
+  function goNext() {
+    current++;
+    if (current >= steps.length) { cleanup(); toast('体验完成！尝试连接钱包部署策略', 'green'); return; }
+    renderStep();
+  }
+
+  function goBack() {
+    if (current > 0) { current--; renderStep(); }
+  }
+
+  function reposition() { if (backdropEl) renderStep(); }
+
+  function createShell() {
+    // Backdrop with cut-out
+    backdropEl = document.createElement('div');
+    backdropEl.className = 'tour-backdrop';
+    const fill = document.createElement('div');
+    fill.className = 'tour-backdrop-fill';
+    backdropEl.appendChild(fill);
+    document.body.appendChild(backdropEl);
+
+    // Highlight ring
+    highlightEl = document.createElement('div');
+    highlightEl.className = 'tour-highlight';
+    document.body.appendChild(highlightEl);
+
+    // Tooltip
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'tour-tooltip';
+    document.body.appendChild(tooltipEl);
+
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', reposition);
+  }
+
+  function renderStep() {
+    const step = steps[current];
+    const el = document.querySelector(step.target);
+    if (!el) { goNext(); return; }
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Delay positioning to let scroll settle
+    setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const pad = 10;
+      const top = rect.top - pad;
+      const left = rect.left - pad;
+      const w = rect.width + pad * 2;
+      const h = rect.height + pad * 2;
+
+      // Backdrop cut-out via clip-path (creates darkened overlay with a hole)
+      const fill = backdropEl.querySelector('.tour-backdrop-fill');
+      fill.style.clipPath = `polygon(
+        0% 0%, 0% 100%, ${left}px 100%, ${left}px ${top}px,
+        ${left + w}px ${top}px, ${left + w}px ${top + h}px,
+        ${left}px ${top + h}px, ${left}px 100%, 100% 100%, 100% 0%
+      )`;
+
+      // Position highlight ring
+      highlightEl.style.top = top + 'px';
+      highlightEl.style.left = left + 'px';
+      highlightEl.style.width = w + 'px';
+      highlightEl.style.height = h + 'px';
+
+      // Build progress dots
+      let dots = '';
+      for (let d = 0; d < steps.length; d++) {
+        const cls = d < current ? 'dot done' : d === current ? 'dot active' : 'dot';
+        dots += `<span class="${cls}"></span>`;
+      }
+
+      // Build tooltip HTML
+      tooltipEl.innerHTML = `
+        <div class="tour-title"><span class="tour-step-badge">${current + 1}</span>${step.title}</div>
+        <div class="tour-desc">${step.desc}</div>
+        <div class="tour-progress">${dots}</div>
+        <div class="tour-actions">
+          <button class="tour-btn-close" data-tour="close">关闭</button>
+          ${current > 0 ? '<button class="tour-btn-back" data-tour="back">上一步</button>' : ''}
+          <button class="tour-btn-next" data-tour="next">${current === steps.length - 1 ? '完成' : '下一步 →'}</button>
+        </div>
+      `;
+
+      // Position tooltip below or above the highlighted section
+      const tipH = tooltipEl.offsetHeight;
+      const tipW = tooltipEl.offsetWidth;
+      const spaceBelow = window.innerHeight - (top + h);
+      let tipTop, tipLeft;
+
+      if (spaceBelow > tipH + 20) {
+        tipTop = top + h + 16;
+      } else {
+        tipTop = Math.max(8, top - tipH - 16);
+      }
+      tipLeft = Math.min(Math.max(8, left + w / 2 - tipW / 2), window.innerWidth - tipW - 8);
+
+      tooltipEl.style.top = tipTop + 'px';
+      tooltipEl.style.left = tipLeft + 'px';
+
+      // Wire button clicks
+      tooltipEl.querySelectorAll('[data-tour]').forEach(btn => {
+        btn.onclick = () => {
+          const action = btn.getAttribute('data-tour');
+          if (action === 'next') goNext();
+          else if (action === 'back') goBack();
+          else cleanup();
+        };
+      });
+    }, 450);
+  }
+
+  createShell();
+  renderStep();
 }
 
 // ── Init ──

@@ -25,6 +25,7 @@ export async function runCognitiveCycle() {
   };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+  const cycleStart = performance.now();
   for (let i = 1; i <= 5; i++) setDot(i, '#374151');
 
   // Clear and prepare AI Decision Panel
@@ -202,7 +203,7 @@ export async function runCognitiveCycle() {
   // Summary
   addLog('', '');
   addLog('═══ 认知循环完成 ═══', 'text-[var(--neon)]');
-  const elapsed = ((Date.now() % 10000) / 1000).toFixed(1);
+  const elapsed = ((performance.now() - cycleStart) / 1000).toFixed(1);
   addLog('  耗时: ' + elapsed + 's  |  5/5 层  |  决策: ' + action, 'text-[var(--neon)]');
   addLog('  数据来源: ' + (realVol !== null ? 'OKX Market API (实时)' : '模拟数据'), realVol !== null ? 'text-green-400' : 'text-yellow-400');
 

@@ -13,7 +13,7 @@ const DIST = path.join(__dirname, 'dist');
 const PORT = process.env.PORT || 3000;
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-76afd04c39dc4e50a8fdf78cc65f754e';
 
-const SYSTEM_PROMPT = `You are Genesis Protocol's AI reasoning engine — an autonomous DeFi agent operating Uniswap V4 Hook strategies on X Layer (Chain 196). You analyze market microstructure, volatility regimes, and MEV patterns to optimize liquidity provision. Provide concise, quantitative analysis in 2-3 sentences. Always reference specific numbers from the data provided.`;
+const SYSTEM_PROMPT = `You are Genesis Protocol's 5-layer cognitive engine (Perception→Analysis→Planning→Evolution→Meta-cognition) for autonomous DeFi on X Layer/OKX (Chain 196). You run DynamicFee sigmoid pricing, MEV sandwich detection, and AutoRebalance tick boundaries on Uniswap V4 Hooks. Respond in English, 3-4 sentences max: state risk assessment with numbers from the data, recommend a specific action, and give confidence reasoning. Only execute above the 0.7 confidence gate.`;
 
 const MIME = {
   '.html': 'text/html',

@@ -11,6 +11,35 @@ Genesis 是一个 AI Agent Skill，能够在 [X Layer](https://www.okx.com/xlaye
 
 **[交互式 dApp](https://ujf2c4fh.mule.page/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
 
+> **OKX Build X Hackathon** 参赛项目 (奖池 14,000 USDT)
+
+---
+
+## 评委快速体验指南 / Quick Demo Guide for Judges
+
+> 3 分钟即可体验 Genesis Protocol 全部核心功能，无需安装任何依赖。
+> Experience all core features in 3 minutes -- no installation required.
+
+1. **访问 dApp** -- 打开 [https://ujf2c4fh.mule.page/](https://ujf2c4fh.mule.page/)
+2. **引导式体验** -- 点击页面上的 **「3分钟体验」** 按钮，进入交互式引导流程
+3. **观看 AI 推理** -- 点击 **「启动认知循环」**，实时观看 DeepSeek LLM 生成市场分析与策略推理
+4. **连接 OKX Wallet** -- 连接钱包后可部署策略、铸造 NFT、发送 x402 链上支付（真实 OKB 结算）
+5. **真实链上数据** -- 所有数据均来自 X Layer 主网合约（Chain 196），157+ 笔真实交易可在 [OKLink](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) 上验证
+
+---
+
+## 为什么选择 Genesis？ / Why Genesis?
+
+**问题 / The Problem**: 传统 AMM 使用静态手续费率，在市场波动剧烈时 LP 承受巨大无常损失，在市场平静时又因费率过高而流失交易量。LP 面临两难困境 -- 无论市场如何变化，费率始终不变。
+
+**解决方案 / The Solution**: Genesis 通过 Uniswap V4 Hooks 实现 AI 驱动的动态费率调整，让 LP 收益随市场状况实时优化。
+
+- **静态费率 vs 自适应费率 / Static vs Adaptive**: 静态 LP 费率回测年化收益约 ~8% APY；Genesis 自适应策略在相同回测周期中达到 **24.7% APY** -- 提升超过 3 倍
+- **AI 感知市场区间 / AI Regime Detection**: 5 层认知架构实时识别市场状态（低波动/高波动/趋势/极端），自动切换最优 Hook 配置
+- **MEV 保护 / MEV Protection**: 三明治攻击检测与阻断，将 MEV 从「搜索者利润」转化为「LP 收入」
+- **全链上可审计 / Fully On-chain Auditable**: 每个 AI 决策都附带 LLM 推理哈希记录在链上，实现完全透明的决策追踪
+- **零人工干预 / Zero Manual Intervention**: 从市场感知到策略部署、参数调整、再平衡执行，全流程自主运行
+
 ---
 
 ## 项目简介
@@ -383,6 +412,8 @@ DRY_RUN  = True     # 不广播链上交易
 | NFT 授权 | 5.00 USDT | 同步 | ✅ 收款地址验证 |
 
 > x402 服务器支持真实链上支付验证（`X402_DEMO=false`），通过 X Layer RPC 验证 USDT 转账交易。演示模式下接受任意 hex 字符串作为 proof。
+>
+> **NEW**: 连接 OKX Wallet 后，x402 支付层支持**真实链上 OKB 支付** -- 用户通过钱包签名发送真实交易，合约端验证 Transfer 事件，实现端到端链上结算（非模拟）。通过 Uniswap `pay-with-any-token` 自动将 OKB 兑换为 USDT 完成结算。
 
 ### 前端架构
 
