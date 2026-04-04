@@ -1,75 +1,120 @@
-// ── Market Intelligence (OKX Public API + Simulation Fallback) ──
+// ── Market Intelligence (OKX Public API via Vite Proxy + Simulation Fallback) ──
+// In dev mode, requests go through Vite proxy to avoid CORS.
+// In production, set OKX_API_BASE / CG_API_BASE to your own backend proxy.
 
 import { toast } from '../main.js';
+
+// Detect proxy availability: Vite dev server provides /okx-api proxy.
+// For production builds, fall back to direct URLs (requires server-side proxy).
+const OKX_BASE = '/okx-api';       // proxied to https://www.okx.com
+const CG_BASE  = '/cg-api';        // proxied to https://api.coingecko.com
+const OKX_DIRECT = 'https://www.okx.com';
+const CG_DIRECT  = 'https://api.coingecko.com';
 
 let priceChart = null;
 export let marketData = {};
 
+async function tryFetch(url, timeoutMs = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    return r;
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
 async function fetchOKXTicker(instId) {
-  try {
-    const r = await fetch('https://www.okx.com/api/v5/market/ticker?instId=' + instId);
-    const j = await r.json();
-    if (j.code === '0' && j.data && j.data[0]) return j.data[0];
-  } catch (e) { /* ignore */ }
-  try {
-    const cgMap = { 'ETH-USDT': 'ethereum', 'BTC-USDT': 'bitcoin', 'OKB-USDT': 'okb' };
-    const cgId = cgMap[instId];
-    if (cgId) {
-      const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=' + cgId + '&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_high_24h=true&include_low_24h=true');
+  // Try proxied OKX first, then direct OKX, then CoinGecko proxy, then CoinGecko direct
+  const okxPath = '/api/v5/market/ticker?instId=' + instId;
+  const endpoints = [OKX_BASE + okxPath, OKX_DIRECT + okxPath];
+  for (const url of endpoints) {
+    try {
+      const r = await tryFetch(url);
       const j = await r.json();
-      if (j[cgId]) {
-        const d = j[cgId];
-        const last = d.usd;
-        const chg = d.usd_24h_change || 0;
-        const open = last / (1 + chg / 100);
-        return {
-          last: String(last),
-          open24h: String(open.toFixed(4)),
-          high24h: String(d.usd_24h_high || last * 1.01),
-          low24h: String(d.usd_24h_low || last * 0.99),
-          _source: 'coingecko',
-        };
-      }
+      if (j.code === '0' && j.data && j.data[0]) return j.data[0];
+    } catch (e) { /* try next */ }
+  }
+  // CoinGecko fallback
+  const cgMap = { 'ETH-USDT': 'ethereum', 'BTC-USDT': 'bitcoin', 'OKB-USDT': 'okb' };
+  const cgId = cgMap[instId];
+  if (cgId) {
+    const cgPath = '/api/v3/simple/price?ids=' + cgId + '&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_high_24h=true&include_low_24h=true';
+    const cgEndpoints = [CG_BASE + cgPath, CG_DIRECT + cgPath];
+    for (const url of cgEndpoints) {
+      try {
+        const r = await tryFetch(url);
+        const j = await r.json();
+        if (j[cgId]) {
+          const d = j[cgId];
+          const last = d.usd;
+          const chg = d.usd_24h_change || 0;
+          const open = last / (1 + chg / 100);
+          return {
+            last: String(last),
+            open24h: String(open.toFixed(4)),
+            high24h: String(d.usd_24h_high || last * 1.01),
+            low24h: String(d.usd_24h_low || last * 0.99),
+            _source: 'coingecko',
+          };
+        }
+      } catch (e) { /* try next */ }
     }
-  } catch (e) { /* ignore */ }
+  }
   return null;
 }
 
 export async function fetchOKXCandles(instId, bar, limit) {
-  try {
-    const r = await fetch('https://www.okx.com/api/v5/market/candles?instId=' + instId + '&bar=' + bar + '&limit=' + limit);
-    const j = await r.json();
-    if (j.code === '0' && j.data) return j.data;
-  } catch (e) { /* ignore */ }
-  try {
-    const cgMap = { 'ETH-USDT': 'ethereum', 'BTC-USDT': 'bitcoin', 'OKB-USDT': 'okb' };
-    const cgId = cgMap[instId];
-    if (cgId) {
-      const r = await fetch('https://api.coingecko.com/api/v3/coins/' + cgId + '/market_chart?vs_currency=usd&days=1');
+  const okxPath = '/api/v5/market/candles?instId=' + instId + '&bar=' + bar + '&limit=' + limit;
+  const endpoints = [OKX_BASE + okxPath, OKX_DIRECT + okxPath];
+  for (const url of endpoints) {
+    try {
+      const r = await tryFetch(url);
       const j = await r.json();
-      if (j.prices && j.prices.length > 5) {
-        const step = Math.max(1, Math.floor(j.prices.length / parseInt(limit)));
-        const candles = [];
-        for (let i = 0; i < j.prices.length && candles.length < parseInt(limit); i += step) {
-          const chunk = j.prices.slice(i, i + step);
-          const prices = chunk.map(p => p[1]);
-          const o = prices[0], c = prices[prices.length - 1];
-          const h = Math.max(...prices), l = Math.min(...prices);
-          candles.push([String(chunk[0][0]), String(o), String(h), String(l), String(c), '0']);
+      if (j.code === '0' && j.data) return j.data;
+    } catch (e) { /* try next */ }
+  }
+  // CoinGecko fallback
+  const cgMap = { 'ETH-USDT': 'ethereum', 'BTC-USDT': 'bitcoin', 'OKB-USDT': 'okb' };
+  const cgId = cgMap[instId];
+  if (cgId) {
+    const cgPath = '/api/v3/coins/' + cgId + '/market_chart?vs_currency=usd&days=1';
+    const cgEndpoints = [CG_BASE + cgPath, CG_DIRECT + cgPath];
+    for (const url of cgEndpoints) {
+      try {
+        const r = await tryFetch(url);
+        const j = await r.json();
+        if (j.prices && j.prices.length > 5) {
+          const step = Math.max(1, Math.floor(j.prices.length / parseInt(limit)));
+          const candles = [];
+          for (let i = 0; i < j.prices.length && candles.length < parseInt(limit); i += step) {
+            const chunk = j.prices.slice(i, i + step);
+            const prices = chunk.map(p => p[1]);
+            const o = prices[0], c = prices[prices.length - 1];
+            const h = Math.max(...prices), l = Math.min(...prices);
+            candles.push([String(chunk[0][0]), String(o), String(h), String(l), String(c), '0']);
+          }
+          return candles;
         }
-        return candles;
-      }
+      } catch (e) { /* try next */ }
     }
-  } catch (e) { /* ignore */ }
+  }
   return null;
 }
 
 async function fetchFundingRate() {
-  try {
-    const r = await fetch('https://www.okx.com/api/v5/public/funding-rate?instId=ETH-USDT-SWAP');
-    const j = await r.json();
-    if (j.code === '0' && j.data && j.data[0]) return j.data[0];
-  } catch (e) { /* ignore */ }
+  const okxPath = '/api/v5/public/funding-rate?instId=ETH-USDT-SWAP';
+  const endpoints = [OKX_BASE + okxPath, OKX_DIRECT + okxPath];
+  for (const url of endpoints) {
+    try {
+      const r = await tryFetch(url);
+      const j = await r.json();
+      if (j.code === '0' && j.data && j.data[0]) return j.data[0];
+    } catch (e) { /* try next */ }
+  }
   return null;
 }
 

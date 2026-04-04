@@ -199,11 +199,17 @@ export function updateProtocolStatus(rpcProvider) {
     setProtoStatus('uniswap', online, online ? 'Connected' : 'Offline');
   }).catch(() => setProtoStatus('uniswap', false, 'Error'));
 
-  // OKX DEX: check by trying a ticker fetch
-  fetch('https://www.okx.com/api/v5/market/ticker?instId=ETH-USDT', { signal: AbortSignal.timeout(5000) })
+  // OKX DEX: check by trying a ticker fetch (use proxy to avoid CORS)
+  fetch('/okx-api/api/v5/market/ticker?instId=ETH-USDT', { signal: AbortSignal.timeout(5000) })
     .then(r => r.ok ? r.json() : Promise.reject())
     .then(j => setProtoStatus('okx', j.code === '0', j.code === '0' ? 'Live' : 'Degraded'))
-    .catch(() => setProtoStatus('okx', false, 'Unreachable'));
+    .catch(() => {
+      // Fallback: try direct (may fail due to CORS in browser)
+      fetch('https://www.okx.com/api/v5/market/ticker?instId=ETH-USDT', { signal: AbortSignal.timeout(5000) })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(j => setProtoStatus('okx', j.code === '0', j.code === '0' ? 'Live' : 'Degraded'))
+        .catch(() => setProtoStatus('okx', false, 'Unreachable'));
+    });
 
   // OnchainOS: check assembler owner
   const assembler = new ethers.Contract(CFG.assembler, ASSEMBLER_ABI, rpcProvider);
