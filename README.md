@@ -128,7 +128,7 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 - GOKB Token: [`0x81902d53cc0fd247196508af9Df596Cd387D7321`](https://www.oklink.com/xlayer/address/0x81902d53cc0fd247196508af9Df596Cd387D7321)
 - 流动性添加: 范围 [-6000, +6000]，3 笔真实 Swap 已通过 DynamicFee + MEV Protection 模块执行
 
-**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 44 决策日志 + 12 性能更新 + 6 真实 V4 Swap (含 WOKB) + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 + 13 WOKB 池交易 = **118+ 笔主网交易**
+**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 65 决策日志 + 12 性能更新 + 6 真实 V4 Swap (含 WOKB) + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 + 13 WOKB 池交易 = **142+ 笔主网交易**
 
 浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V4 Hook](https://www.oklink.com/xlayer/address/0x174a2450b342042AAe7398545f04B199248E69c0)
 
@@ -370,14 +370,14 @@ python3 demo.py
 | 已创建策略 | 7 (含 full_defense 5模块策略) |
 | V4 Pool | 2 (GALPHA/GBETA + **WOKB/GOKB 真实价值池**) |
 | 真实 V4 Swap | 6 (通过 Hook 模块分发, 含 WOKB 真实价值 Swap) |
-| 决策日志条目 | 49+ (含自主 Agent 认知循环 + ML 贝叶斯/EWMA/LR 决策) |
+| 决策日志条目 | 65+ (含自主 Agent 认知循环 + ML 贝叶斯/EWMA/LR 决策 + OnchainOS API 实时数据) |
 | 性能更新 | 12+ |
 | 策略 NFT 铸造 | 5 (含 full_defense 全模块 NFT) |
 | 自主 Agent 循环 | 3 轮 (含参数进化 + 元认知自省) |
-| ML 链上决策 | 5 (贝叶斯regime分类、EWMA波动率预测、线性回归预测、SGD权重更新、Agent心跳) |
+| ML 链上决策 | 9 (贝叶斯regime分类、EWMA波动率预测、线性回归预测、SGD权重更新、Agent心跳、DeFi基准对比、TWAP预言机更新) |
 | WOKB 池交易 | 13 (包装OKB + 部署 + 初始化 + 流动性 + 3笔Swap) |
 | OnchainOS 集成验证 | 49 项技能测试, 35 通过, 覆盖 7 大类 |
-| 总主网交易数 | **118+** |
+| 总主网交易数 | **142+** |
 
 #### X Layer 测试网 (Chain 1952) -- 开发阶段
 

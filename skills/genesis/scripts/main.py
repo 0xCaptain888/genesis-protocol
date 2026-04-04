@@ -283,17 +283,153 @@ def cmd_x402_pay(product=None, token=None, payer=None):
         print(f"  ✗ Payment failed: {result.get('error', 'unknown')}")
 
 
+def _parse_natural_language(text: str) -> tuple:
+    """Parse a natural language request into a (command, args) tuple.
+
+    Enables AI-native interaction -- users and agents can describe what they
+    want in plain language instead of memorising CLI syntax.
+
+    Returns:
+        (command_str, args_list)  or  (None, None) if no intent matched.
+    """
+    t = text.lower().strip()
+
+    # ── Market / Price queries ─────────────────────────────────────────
+    if any(kw in t for kw in ("市场", "market", "price", "价格", "行情",
+                               "what's the market", "how's the market",
+                               "show me prices", "check market")):
+        return "market", []
+
+    # ── Strategy creation ──────────────────────────────────────────────
+    if any(kw in t for kw in ("创建策略", "create strategy", "new strategy",
+                               "deploy strategy", "build strategy",
+                               "部署策略", "生成策略")):
+        for preset in config.STRATEGY_PRESETS:
+            if preset.replace("_", " ") in t or preset in t:
+                return "create-strategy", [preset]
+        if any(kw in t for kw in ("volatile", "波动", "defend", "防御")):
+            return "create-strategy", ["volatile_defender"]
+        if any(kw in t for kw in ("trend", "趋势", "ride", "追涨")):
+            return "create-strategy", ["trend_rider"]
+        if any(kw in t for kw in ("full", "全部", "defense", "最大保护")):
+            return "create-strategy", ["full_defense"]
+        return "create-strategy", ["calm_accumulator"]
+
+    # ── Strategy status / health ───────────────────────────────────────
+    if any(kw in t for kw in ("状态", "status", "how are my strategies",
+                               "check strategies", "策略状态",
+                               "how's it going", "engine status")):
+        return "status", []
+
+    # ── Rebalance ──────────────────────────────────────────────────────
+    if any(kw in t for kw in ("再平衡", "rebalance", "adjust position",
+                               "调整头寸", "re-balance")):
+        import re
+        nums = re.findall(r'\d+', t)
+        if nums:
+            return "rebalance", [nums[0]]
+        return "rebalance", ["0"]
+
+    # ── Deactivate ─────────────────────────────────────────────────────
+    if any(kw in t for kw in ("停止", "deactivate", "stop strategy",
+                               "关闭策略", "shut down strategy")):
+        import re
+        nums = re.findall(r'\d+', t)
+        if nums:
+            return "deactivate", [nums[0]]
+        return None, None
+
+    # ── NFT minting ────────────────────────────────────────────────────
+    if any(kw in t for kw in ("铸造", "mint", "nft", "generate nft",
+                               "铸造nft", "mint nft", "create nft")):
+        import re
+        nums = re.findall(r'\d+', t)
+        if nums:
+            return "mint-nft", [nums[0]]
+        return "mint-nft", ["0"]
+
+    # ── Decision journal ───────────────────────────────────────────────
+    if any(kw in t for kw in ("日志", "journal", "decisions", "决策记录",
+                               "show decisions", "audit log", "审计")):
+        import re
+        nums = re.findall(r'\d+', t)
+        return "journal", [nums[0]] if nums else []
+
+    # ── Config ─────────────────────────────────────────────────────────
+    if any(kw in t for kw in ("配置", "config", "settings", "设置",
+                               "show config")):
+        return "config", ["show"]
+
+    # ── x402 payment ───────────────────────────────────────────────────
+    if any(kw in t for kw in ("支付", "payment", "x402", "pay", "pricing",
+                               "价格", "定价")):
+        if any(kw in t for kw in ("pricing", "定价", "价格", "tiers")):
+            return "x402", ["pricing"]
+        return "x402", ["pricing"]
+
+    # ── Start / stop engine ────────────────────────────────────────────
+    if any(kw in t for kw in ("启动", "start engine", "run engine", "开始",
+                               "launch", "begin")):
+        return "start", []
+    if any(kw in t for kw in ("停止引擎", "stop engine", "halt")):
+        return "stop", []
+
+    # ── Deploy ─────────────────────────────────────────────────────────
+    if any(kw in t for kw in ("部署", "deploy", "deploy contracts")):
+        return "deploy", []
+
+    # ── Help / fallback ────────────────────────────────────────────────
+    if any(kw in t for kw in ("帮助", "help", "what can you do",
+                               "你能做什么", "commands")):
+        return "help", []
+
+    return None, None
+
+
+def cmd_help():
+    """Display available commands with natural language examples."""
+    print("Genesis Protocol - AI-Powered Uniswap V4 Hook Strategy Engine")
+    print("=" * 65)
+    print()
+    print("You can use commands or natural language:")
+    print()
+    print("  Commands:")
+    print("    market                  Show market analysis")
+    print("    status                  Engine and strategy status")
+    print("    create-strategy [name]  Create a strategy")
+    print("    rebalance <id>          Rebalance a strategy")
+    print("    deactivate <id>         Deactivate a strategy")
+    print("    mint-nft <id>           Mint strategy NFT")
+    print("    journal [id]            View decision journal")
+    print("    deploy                  Deploy contracts")
+    print("    config show             Show configuration")
+    print("    x402 pricing            Show payment tiers")
+    print("    start                   Start cognitive engine")
+    print()
+    print("  Natural language examples:")
+    print('    "今天市场看起来很波动"       → market analysis')
+    print('    "Create a volatile strategy" → create volatile_defender')
+    print('    "策略状态如何？"             → status')
+    print('    "Mint NFT for strategy 3"   → mint-nft 3')
+    print('    "Show me the decision log"  → journal')
+    print()
+    print(f"  Chain: X Layer mainnet (ID {config.CHAIN_ID})")
+    print(f"  Wallet: {config.AGENTIC_WALLET}")
+
+
 def main():
     # Run integration verification on startup
     _startup_verify()
 
     if len(sys.argv) < 2:
-        print(__doc__)
+        cmd_help()
         return
 
     cmd = sys.argv[1]
     args = sys.argv[2:]
 
+    # ── Try natural language parsing first ──────────────────────────────
+    # If the first arg doesn't match a known command, try NL parsing
     commands = {
         "start": lambda: cmd_start(),
         "stop": lambda: cmd_stop(),
@@ -307,13 +443,46 @@ def main():
         "market": lambda: cmd_market(),
         "config": lambda: cmd_config_show() if not args or args[0] == "show" else print("Usage: config show"),
         "x402": lambda: cmd_x402_pricing() if args and args[0] == "pricing" else (cmd_x402_pay(args[1] if len(args) > 1 else None, args[2] if len(args) > 2 else None, args[3] if len(args) > 3 else None) if args and args[0] == "pay" else print("Usage: x402 pricing | x402 pay <product> <token> <payer>")),
+        "help": lambda: cmd_help(),
     }
 
     if cmd in commands:
         commands[cmd]()
-    else:
-        print(f"Unknown command: {cmd}")
-        print(__doc__)
+    elif cmd == "ask" or cmd not in commands:
+        # Natural language mode: join all args as a query
+        nl_input = " ".join([cmd] + args)
+        parsed_cmd, parsed_args = _parse_natural_language(nl_input)
+        if parsed_cmd and parsed_cmd in commands:
+            # Re-bind args for the parsed command
+            args = parsed_args
+            logger.info("NL parsed: '%s' -> cmd=%s args=%s", nl_input, parsed_cmd, args)
+            print(f"  [AI] Understood: {parsed_cmd} {' '.join(args)}")
+            print()
+            # Re-create command lambdas with parsed args
+            nl_commands = {
+                "start": lambda: cmd_start(),
+                "stop": lambda: cmd_stop(),
+                "status": lambda: cmd_status(),
+                "deploy": lambda: cmd_deploy(),
+                "create-strategy": lambda: cmd_create_strategy(parsed_args[0] if parsed_args else None),
+                "rebalance": lambda: cmd_rebalance(parsed_args[0]) if parsed_args else print("Need strategy ID"),
+                "deactivate": lambda: cmd_deactivate(parsed_args[0]) if parsed_args else print("Need strategy ID"),
+                "mint-nft": lambda: cmd_mint_nft(parsed_args[0]) if parsed_args else print("Need strategy ID"),
+                "journal": lambda: cmd_journal(parsed_args[0] if parsed_args else None),
+                "market": lambda: cmd_market(),
+                "config": lambda: cmd_config_show(),
+                "x402": lambda: cmd_x402_pricing(),
+                "help": lambda: cmd_help(),
+            }
+            nl_commands[parsed_cmd]()
+        else:
+            print(f"I didn't understand: '{nl_input}'")
+            print("Try 'help' for available commands, or describe what you want in natural language.")
+            print()
+            print("Examples:")
+            print('  genesis market')
+            print('  genesis "show me the market"')
+            print('  genesis create-strategy volatile_defender')
 
 
 if __name__ == "__main__":

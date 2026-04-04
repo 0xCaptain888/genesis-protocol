@@ -15,12 +15,17 @@ MODE = "paper"          # "paper" | "live"
 DRY_RUN = True          # If True, simulate all contract calls
 LOG_LEVEL = "INFO"      # "DEBUG" | "INFO" | "WARN" | "ERROR"
 
-# ─── Chain Configuration ──────────────────────────────────────────────────
-CHAIN_ID = 1952                         # X Layer testnet
+# ─── Chain Configuration (Mainnet-first) ─────────────────────────────────
+CHAIN_ID = 196                          # X Layer mainnet (primary)
 CHAIN_NAME = "xlayer"
-RPC_URL = "https://xlayertestrpc.okx.com"
+RPC_URL = "https://rpc.xlayer.tech"
 EXPLORER_URL = "https://www.oklink.com/xlayer"
 ZERO_GAS_TOKENS = ["USDG", "USDT"]     # Zero gas fee tokens on X Layer
+
+# Testnet fallback (Chain 1952) for development / dry-run testing
+TESTNET_CHAIN_ID = 1952
+TESTNET_RPC_URL = "https://xlayertestrpc.okx.com"
+TESTNET_EXPLORER_URL = "https://www.oklink.com/xlayer-test"
 
 # ─── Agentic Wallet Configuration ─────────────────────────────────────────
 WALLET_ROLES = {

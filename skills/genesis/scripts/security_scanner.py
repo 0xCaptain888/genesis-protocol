@@ -346,7 +346,7 @@ class SecurityScanner:
         try:
             from . import onchainos_api
             api = onchainos_api.OnchainOSAPI()
-            result = api.get_dex_tokens(chain_id=str(cid))
+            result = api.get_dex_tokens(chain_id=str(chain_id))
             if result and isinstance(result.get("data"), list):
                 addr_lower = address.lower()
                 for token_entry in result["data"]:
