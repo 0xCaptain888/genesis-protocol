@@ -9,7 +9,7 @@
 
 Genesis 是一个 AI Agent Skill，能够在 [X Layer](https://www.okx.com/xlayer) 上自主生成、部署和管理可组合的 Uniswap V4 Hook 策略。它将链上 Solidity 模块与 5 层 AI 认知架构相结合，提供机构级 DeFi 策略管理。
 
-**[交互式 dApp](https://wd3adkep.mule.page/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
+**[交互式 dApp](https://ujf2c4fh.mule.page/)** | **[GitHub](https://github.com/0xCaptain888/genesis-protocol)**
 
 ---
 
