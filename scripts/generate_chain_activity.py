@@ -30,7 +30,10 @@ MEV_PROTECTION = "0xA4f6ABd6F77928b06F075637ccBACA8f89e17386"
 AUTO_REBALANCE = "0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee"
 STRATEGY_NFT = "0xd969448dfc24Fe3Aff25e86db338fAB41b104319"
 
-DELAY_BETWEEN_TX = 2  # seconds between transactions
+LIQUIDITY_SHIELD = "0x34Bd6972F086c947e4503185e1A1094d9846b2aC"
+ORACLE_MODULE = "0x30049511c4c483E9500A74701DED562A8F1ea86f"
+
+DELAY_BETWEEN_TX = 1  # seconds between transactions
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -93,21 +96,33 @@ DECISION_TYPES = [
     ("MARKET_ANALYSIS", "ETH volatility at 5.8%, regime: volatile_defender, confidence: 0.87"),
     ("MARKET_ANALYSIS", "OKB stable at 2.1% vol, regime: calm_accumulator, confidence: 0.91"),
     ("MARKET_ANALYSIS", "BTC correlation spike to 0.94, cross-asset contagion risk elevated"),
+    ("MARKET_ANALYSIS", "ETH-USDC 1h candle analysis: bearish engulfing, vol expanding 3.2%->4.8%"),
+    ("MARKET_ANALYSIS", "Funding rate negative -0.012%, shorts dominant, potential squeeze setup"),
     ("FEE_ADJUST", "Raising min fee to 1000 bps due to elevated volatility regime"),
     ("FEE_ADJUST", "Lowering max fee to 3000 bps, calm market detected for 6 hours"),
     ("FEE_ADJUST", "Dynamic fee sensitivity adjusted to 1.2x for trending market"),
+    ("FEE_ADJUST", "Fee optimization: sensitivity 8000->12000, responding to vol regime shift"),
     ("REBALANCE_SIGNAL", "Position at 87% of upper boundary, soft trigger activated"),
     ("REBALANCE_SIGNAL", "IL threshold exceeded at 2.3%, forced rebalance initiated"),
     ("REBALANCE_SIGNAL", "TWAP rebalance scheduled over 5 blocks, tick drift: +12"),
+    ("REBALANCE_SIGNAL", "Auto-rebalance: tick moved 15 ticks, cooldown expired, executing immediate"),
     ("PERFORMANCE_EVAL", "Strategy #0 24h P&L: +1.52%, 47 swaps, fee revenue: 0.8 ETH"),
     ("PERFORMANCE_EVAL", "Strategy #1 24h P&L: -0.31%, 23 swaps, underperforming baseline"),
     ("PERFORMANCE_EVAL", "Portfolio sharpe ratio: 1.84, max drawdown: 0.6% over 7 days"),
+    ("PERFORMANCE_EVAL", "DeFi benchmark: Genesis yield 12.3% vs Aave 4.1% vs Compound 3.8%"),
     ("META_COGNITION", "Self-assessment: prediction accuracy 78%, vol-response latency 42s"),
     ("META_COGNITION", "Bias check: no over-trading detected, wallet utilization at 94%"),
     ("META_COGNITION", "Adjusting risk_tolerance 0.50 -> 0.47, rebalance_eagerness 0.60 -> 0.64"),
+    ("META_COGNITION", "Layer 5 review: 12 decisions in 24h, 9 correct, calibration score 0.82"),
     ("REGIME_SHIFT", "Transitioning from calm_accumulator to trend_rider, ETH breaking range"),
     ("REGIME_SHIFT", "Volatile regime confirmed for OKB pair, activating MEV protection"),
     ("REGIME_SHIFT", "Market calm restored after 4h volatility event, reverting to accumulator"),
+    ("REGIME_SHIFT", "Full defense mode: vol 12.4%, MEV detected, activating all 5 modules"),
+    ("CCA_AUCTION_CREATE", "MEV opportunity detected: 0.05 ETH extractable, creating CCA auction"),
+    ("CCA_AUCTION_SETTLE", "CCA auction settled: 3 bidders, winning bid 0.04 ETH, LP share: 0.034 ETH"),
+    ("LIQUIDITY_SHIELD", "JIT attack blocked: price impact 120bps exceeded 50bps threshold"),
+    ("ORACLE_UPDATE", "TWAP oracle updated: 30min avg 1823.45, volatility estimate 4.7%"),
+    ("DEFI_BENCHMARK", "Cross-protocol yield comparison: Genesis 11.2% vs market avg 5.1%"),
 ]
 
 
@@ -144,6 +159,11 @@ PERFORMANCE_UPDATES = [
     (2, 320, 72, "Peak performance day, all modules contributing"),
     (0, 143, 130, "Consistent mid-range performance, no anomalies"),
     (1, -12, 90, "Near breakeven, awaiting regime shift confirmation"),
+    (0, 195, 155, "Fee optimization pays off: +1.95% after sensitivity tweak"),
+    (2, -68, 45, "Shield module triggered 3x, absorbed impact cost"),
+    (1, 412, 102, "Best day: CCA auction captured 0.04 ETH MEV as LP revenue"),
+    (0, 88, 178, "Steady state: low vol, consistent small gains"),
+    (2, 245, 96, "Oracle TWAP feed improved rebalance timing by 15%"),
 ]
 
 
@@ -171,6 +191,9 @@ STRATEGY_CONFIGS = [
     ("volatile_defender", [DYNAMIC_FEE, MEV_PROTECTION, AUTO_REBALANCE]),
     ("trend_rider", [DYNAMIC_FEE, MEV_PROTECTION, AUTO_REBALANCE]),
     ("sniper_mode", [DYNAMIC_FEE, MEV_PROTECTION]),
+    ("full_defense", [DYNAMIC_FEE, MEV_PROTECTION, AUTO_REBALANCE, LIQUIDITY_SHIELD, ORACLE_MODULE]),
+    ("shield_accumulator", [DYNAMIC_FEE, AUTO_REBALANCE, LIQUIDITY_SHIELD]),
+    ("oracle_defender", [DYNAMIC_FEE, MEV_PROTECTION, ORACLE_MODULE]),
 ]
 
 
@@ -199,6 +222,12 @@ SWAP_SCENARIOS = [
     (0, False, "500000000000000000",  "ETH/USDC sell, 0.5 ETH"),
     (1, True,  "2500000000000000000", "Large OKB/USDT buy, 2.5 ETH"),
     (2, False, "750000000000000000",  "Medium sell during volatile regime, 0.75 ETH"),
+    (0, True,  "100000000000000000",  "Small buy, testing dynamic fee at low vol"),
+    (1, False, "3000000000000000000", "Whale sell, MEV protection active"),
+    (2, True,  "200000000000000000",  "DCA buy in full_defense mode"),
+    (0, True,  "1500000000000000000", "Post-rebalance buy to test new range"),
+    (1, True,  "800000000000000000",  "Momentum buy, trend_rider active"),
+    (2, False, "600000000000000000",  "Take profit sell, oracle TWAP confirms top"),
 ]
 
 WALLET = "0xd2D120eB7cEd38551cCeFb48021067d41D6542d3"

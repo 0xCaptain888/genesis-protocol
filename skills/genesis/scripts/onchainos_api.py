@@ -289,8 +289,50 @@ class OnchainOSAPI:
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
 
     def get_price(self, base: str, quote: str, chain_id: str = "196") -> dict | None:
-        """GET price data for a base/quote pair via DEX aggregator tokens."""
-        return self.get_dex_tokens(chain_id)
+        """GET price data for a base/quote pair.
+
+        Tries the Market API ticker endpoint first (e.g. ETH-USDT), then falls
+        back to the DEX aggregator quote endpoint on X Layer.
+
+        Returns: dict with ``price``, ``base``, ``quote`` keys, or None.
+        """
+        # Try Market API ticker first (most accurate for major pairs)
+        inst_id = f"{base}-{quote}"
+        ticker = self.get_ticker(inst_id)
+        if ticker and ticker.get("code") == "0" and ticker.get("data"):
+            last = ticker["data"][0].get("last")
+            if last:
+                return {"price": float(last), "base": base, "quote": quote,
+                        "source": "market_ticker", "inst_id": inst_id}
+
+        # Fallback: DEX aggregator quote (on-chain price)
+        # Use well-known token addresses on X Layer
+        token_map = {
+            "ETH": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+            "WETH": "0x5A77f1443D16ee5761d310e38b62f77f726bC71c",
+            "USDT": "0x1E4a5963aBFD975d8c9021ce480b42188849D41d",
+            "USDC": "0x74b7F16337b8972027F6196A17a631aC6dE26d22",
+            "OKB": "0xBb9cFe74E22EFC56C0F020F20D1684F02994a651",
+        }
+        token_in = token_map.get(base.upper())
+        token_out = token_map.get(quote.upper())
+        if token_in and token_out:
+            # Quote 1 unit of base token
+            decimals = 18
+            amount = str(10 ** decimals)
+            quote_resp = self.get_dex_quote(token_in, token_out, amount, chain_id)
+            if quote_resp and quote_resp.get("data"):
+                try:
+                    route_data = quote_resp["data"][0] if isinstance(quote_resp["data"], list) else quote_resp["data"]
+                    to_amount = float(route_data.get("toTokenAmount", 0))
+                    to_decimals = int(route_data.get("toToken", {}).get("decimal", 18))
+                    price = to_amount / (10 ** to_decimals)
+                    return {"price": price, "base": base, "quote": quote,
+                            "source": "dex_aggregator", "chain_id": chain_id}
+                except (KeyError, ValueError, TypeError, IndexError):
+                    pass
+
+        return None
 
     def get_dex_quote(self, token_in: str, token_out: str, amount: str,
                       chain_id: str = "196", slippage: str = "50") -> dict | None:

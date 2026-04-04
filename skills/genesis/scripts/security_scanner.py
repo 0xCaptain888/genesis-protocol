@@ -346,10 +346,7 @@ class SecurityScanner:
         try:
             from . import onchainos_api
             api = onchainos_api.OnchainOSAPI()
-            result = api.get(
-                f"/api/v6/dex/aggregator/all-tokens",
-                params={"chainId": str(chain_id)},
-            )
+            result = api.get_dex_tokens(chain_id=str(cid))
             if result and isinstance(result.get("data"), list):
                 addr_lower = address.lower()
                 for token_entry in result["data"]:
@@ -516,7 +513,8 @@ class SecurityScanner:
             }
 
         sim_amount = "1000000"  # Simulate with 1 USDT (6 decimals)
-        usdt_address = "0x0000000000000000000000000000000000000001"  # Placeholder
+        # X Layer USDT contract address
+        usdt_address = "0x1E4a5963aBFD975d8c9021ce480b42188849D41d"
 
         # Simulate buy: USDT -> token
         buy_cmd = [
