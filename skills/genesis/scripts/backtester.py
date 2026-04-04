@@ -198,10 +198,21 @@ class BacktestEngine:
             1. Compute rolling EWMA volatility
             2. Detect regime (calm/volatile/trending)
             3. Calculate dynamic fee based on vol and preset sensitivity
-            4. Estimate swap volume and fee revenue
-            5. Track impermanent loss from price movement
+            4. Estimate swap volume and fee revenue (scaled to LP capital)
+            5. Track impermanent loss using standard x*y=k IL formula
             6. Check rebalance threshold and apply costs
             7. Accumulate P&L
+
+        Fee revenue model:
+            We model a single Uniswap V4 pool with realistic TVL. Our LP
+            position is $10k in a pool with ~$10M TVL, so our share of fees
+            is capital/pool_TVL. Volume flowing through THIS pool is a small
+            fraction (~0.3%) of total exchange volume reported by OKX.
+
+        IL model:
+            Standard constant-product IL from the last rebalance price:
+            IL = 2*sqrt(price_ratio)/(1+price_ratio) - 1
+            Applied to current capital * il_multiplier.
 
         Args:
             preset_name: Key into PRESETS dict.
@@ -219,6 +230,16 @@ class BacktestEngine:
         last_rebalance_price = candles[0]["close"] if candles else 0
         cumulative_pnl = 0.0
         peak_capital = capital
+
+        # Pool parameters for realistic fee scaling
+        # Assume a mid-tier Uniswap V4 pool with ~$10M TVL
+        pool_tvl = 10_000_000.0
+        # Fraction of total OKX volume that flows through this specific pool
+        # (Most volume is on CEXes; a single DEX pool sees a tiny slice)
+        pool_volume_share = 0.02  # ~2% of reported exchange volume
+
+        # Track IL from last rebalance using cumulative price ratio
+        il_applied_so_far = 0.0
 
         # Accumulators
         total_fee_revenue = 0.0
@@ -257,21 +278,31 @@ class BacktestEngine:
             raw_fee_bps = preset["fee_min_bps"] + vol_pct * preset["fee_sensitivity"] * 10
             fee_bps = max(preset["fee_min_bps"], min(preset["fee_max_bps"], raw_fee_bps))
 
-            # --- Volume Estimation ---
-            # Use candle volume as a proxy; estimate our LP share as ~1%
-            lp_share = 0.01
-            estimated_volume = candle["vol"] * price * lp_share
+            # --- Volume & Fee Revenue (realistic pool model) ---
+            # candle["vol"] is in base asset units (ETH) from OKX.
+            # Pool volume = exchange volume * pool_volume_share
+            # Our fee share = (our capital / pool TVL) * pool_volume * fee_rate
+            pool_volume_usd = candle["vol"] * price * pool_volume_share
+            our_pool_share = capital / pool_tvl
+            fee_revenue = pool_volume_usd * our_pool_share * (fee_bps / 10000.0)
 
-            # --- Fee Revenue ---
-            fee_revenue = estimated_volume * (fee_bps / 10000.0)
-
-            # --- Impermanent Loss ---
-            # IL approximation: IL ~= 0.5 * (delta_price / price)^2 * capital
-            if prev_price > 0:
-                price_delta_pct = abs(price - prev_price) / prev_price
+            # --- Impermanent Loss (x*y=k model) ---
+            # IL is computed from the price ratio since last rebalance.
+            # IL(r) = 2*sqrt(r)/(1+r) - 1  where r = price / entry_price
+            # We track the *incremental* IL each period.
+            if last_rebalance_price > 0 and last_rebalance_price != price:
+                r = price / last_rebalance_price
+                sqrt_r = math.sqrt(r)
+                # IL as a fraction (always <= 0 for any r != 1)
+                il_fraction = 2.0 * sqrt_r / (1.0 + r) - 1.0
+                # il_fraction is negative; total IL cost so far from this rebalance
+                cumulative_il = abs(il_fraction) * capital * preset["il_multiplier"]
             else:
-                price_delta_pct = 0
-            il_loss = 0.5 * (price_delta_pct ** 2) * capital * preset["il_multiplier"]
+                cumulative_il = 0.0
+
+            # Incremental IL this period = change in cumulative IL since last period
+            il_loss = max(0.0, cumulative_il - il_applied_so_far)
+            il_applied_so_far = cumulative_il
 
             # MEV protection reduces IL by ~20% when active
             if preset["mev_protection"] and regime == "volatile":
@@ -285,6 +316,8 @@ class BacktestEngine:
                     rebalance_cost = capital * (preset["rebalance_cost_bps"] / 10000.0)
                     last_rebalance_price = price
                     rebalance_count += 1
+                    # Reset IL tracking after rebalance
+                    il_applied_so_far = 0.0
 
             # --- Period P&L ---
             period_pnl = fee_revenue - il_loss - rebalance_cost
@@ -415,6 +448,13 @@ class BacktestEngine:
             for regime, count in results["regime_counts"].items():
                 regime_dist[regime] = round(count / total_regime * 100, 1)
 
+        # Fee APY: annualize the fee revenue rate over the backtest period
+        fee_return_pct = (results["total_fee_revenue"] / self.initial_capital) if self.initial_capital > 0 else 0
+        if n > 1:
+            fee_apy = ((1 + fee_return_pct) ** (periods_per_year / n) - 1) * 100
+        else:
+            fee_apy = 0.0
+
         metrics = {
             "preset": results["preset"],
             "total_return_pct": round(total_return_pct, 4),
@@ -425,6 +465,7 @@ class BacktestEngine:
             "recovery_time_periods": results["recovery_time_periods"],
             "win_rate_pct": round(win_rate, 2),
             "total_fee_revenue": results["total_fee_revenue"],
+            "fee_apy_pct": round(fee_apy, 2),
             "total_il_loss": results["total_il_loss"],
             "total_rebalance_cost": results["total_rebalance_cost"],
             "rebalance_count": results["rebalance_count"],
@@ -499,7 +540,7 @@ class BacktestEngine:
             print(f"\n  {name}")
             print(f"    {PRESETS[name]['description']}")
             print(f"    Modules:           {', '.join(PRESETS[name]['modules'])}")
-            print(f"    Fee Revenue:       ${m['total_fee_revenue']:,.2f}")
+            print(f"    Fee Revenue:       ${m['total_fee_revenue']:,.2f} (Fee APY: {m['fee_apy_pct']:.1f}%)")
             print(f"    IL Loss:           ${m['total_il_loss']:,.2f}")
             print(f"    Rebalance Cost:    ${m['total_rebalance_cost']:,.2f} ({m['rebalance_count']} rebalances)")
             print(f"    Net P&L:           ${m['net_pnl']:,.2f}")

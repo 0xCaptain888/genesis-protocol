@@ -205,7 +205,7 @@ export async function runCognitiveCycle() {
 }
 
 export function refreshAgentStatus() {
-  fetch('http://localhost:8402/status').then(r => {
+  fetch('http://localhost:8402/status', { signal: AbortSignal.timeout(2000) }).then(r => {
     if (r.ok) return r.json();
     throw new Error('offline');
   }).then(data => {

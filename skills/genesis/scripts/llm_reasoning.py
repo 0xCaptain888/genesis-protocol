@@ -1,9 +1,10 @@
 """LLM Reasoning Module - Natural language intelligence layer for the Genesis Protocol.
 
-Integrates large language models (OpenAI GPT-4, Anthropic Claude, OKX AI) to generate
-human-readable reasoning for every decision in the 5-layer cognitive architecture.
-Falls back to a sophisticated template-based reasoning engine when no API keys are
-available, ensuring the system always produces articulate explanations.
+Integrates large language models (OpenAI GPT-4, Anthropic Claude, DeepSeek, any
+OpenAI-compatible endpoint, OKX AI) to generate human-readable reasoning for every
+decision in the 5-layer cognitive architecture.  Falls back to a sophisticated
+template-based reasoning engine when no API keys are available, ensuring the system
+always produces articulate explanations.
 
 Architecture fit:
     Perception  -> analyze_market()
@@ -164,11 +165,17 @@ def _http_json_post(url: str, headers: dict, payload: dict,
         raise
 
 
-def _call_openai(api_key: str, messages: list, model: str = "gpt-4",
-                 temperature: float = 0.4, max_tokens: int = 1024) -> str:
-    """Call the OpenAI Chat Completions API and return the assistant message."""
+def _call_openai_compatible(base_url: str, api_key: str, model: str,
+                            messages: list, temperature: float = 0.4,
+                            max_tokens: int = 1024) -> str:
+    """Call any OpenAI-compatible Chat Completions API and return the assistant message.
+
+    Works with OpenAI, DeepSeek, Together, Groq, Ollama, and any other provider
+    that implements the ``/chat/completions`` endpoint contract.
+    """
+    url = f"{base_url.rstrip('/')}/chat/completions"
     resp = _http_json_post(
-        url="https://api.openai.com/v1/chat/completions",
+        url=url,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -181,6 +188,19 @@ def _call_openai(api_key: str, messages: list, model: str = "gpt-4",
         },
     )
     return resp["choices"][0]["message"]["content"]
+
+
+def _call_openai(api_key: str, messages: list, model: str = "gpt-4",
+                 temperature: float = 0.4, max_tokens: int = 1024) -> str:
+    """Call the OpenAI Chat Completions API and return the assistant message."""
+    return _call_openai_compatible(
+        base_url="https://api.openai.com/v1",
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
 
 def _call_anthropic(api_key: str, messages: list, model: str = "claude-3-5-sonnet-20241022",
@@ -238,6 +258,39 @@ def _call_okx_ai(api_key: str, messages: list,
         },
     )
     return resp["choices"][0]["message"]["content"]
+
+
+def _call_deepseek(api_key: str, messages: list, model: str = "deepseek-chat",
+                   temperature: float = 0.4, max_tokens: int = 1024) -> str:
+    """Call the DeepSeek Chat API (OpenAI-compatible) and return the assistant message."""
+    return _call_openai_compatible(
+        base_url="https://api.deepseek.com/v1",
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def _call_generic_openai_compatible(api_key: str, messages: list,
+                                     temperature: float = 0.4,
+                                     max_tokens: int = 1024) -> str:
+    """Call a user-configured OpenAI-compatible endpoint.
+
+    Reads ``LLM_BASE_URL`` and ``LLM_MODEL`` from the environment so users can
+    plug in any provider (Together, Groq, Ollama, vLLM, etc.).
+    """
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1")
+    model = os.environ.get("LLM_MODEL", "gpt-4")
+    return _call_openai_compatible(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -647,10 +700,11 @@ class _TemplateReasoner:
 class LLMReasoner:
     """Natural-language reasoning layer for the Genesis Protocol cognitive engine.
 
-    Supports multiple LLM providers (OpenAI, Anthropic, OKX AI) and falls back
-    to a sophisticated template-based reasoning engine when no API keys are
-    configured.  Every public method returns structured data that includes both
-    machine-readable fields and human-readable narratives.
+    Supports multiple LLM providers (OpenAI, Anthropic, DeepSeek, OKX AI, and
+    any OpenAI-compatible endpoint) and falls back to a sophisticated
+    template-based reasoning engine when no API keys are configured.  Every
+    public method returns structured data that includes both machine-readable
+    fields and human-readable narratives.
 
     Usage::
 
@@ -661,17 +715,23 @@ class LLMReasoner:
     Environment variables (all optional):
         OPENAI_API_KEY      – enables OpenAI GPT-4
         ANTHROPIC_API_KEY   – enables Anthropic Claude
+        DEEPSEEK_API_KEY    – enables DeepSeek (deepseek-chat)
+        LLM_API_KEY         – enables generic OpenAI-compatible endpoint
+        LLM_BASE_URL        – base URL for openai_compatible provider
+                              (default: https://api.openai.com/v1)
+        LLM_MODEL           – model name for openai_compatible provider
+                              (default: gpt-4)
         OKX_AI_API_KEY      – enables OKX AI endpoint
         OKX_AI_BASE_URL     – override OKX AI base URL
         OKX_AI_MODEL        – override OKX AI model name
         LLM_PROVIDER        – force a specific provider ("openai", "anthropic",
-                              "okx", "template")
+                              "deepseek", "openai_compatible", "okx", "template")
         LLM_CACHE_TTL       – cache lifetime in seconds (default 300)
         LLM_RATE_LIMIT_RPM  – max requests per minute (default 30)
     """
 
     # Provider priority order (first available key wins)
-    _PROVIDER_ORDER = ["openai", "anthropic", "okx"]
+    _PROVIDER_ORDER = ["openai", "anthropic", "deepseek", "openai_compatible", "okx"]
 
     def __init__(self, provider: Optional[str] = None):
         """Initialise the reasoner.
@@ -683,6 +743,8 @@ class LLMReasoner:
         self._keys: Dict[str, str] = {
             "openai": os.environ.get("OPENAI_API_KEY", ""),
             "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
+            "deepseek": os.environ.get("DEEPSEEK_API_KEY", ""),
+            "openai_compatible": os.environ.get("LLM_API_KEY", ""),
             "okx": os.environ.get("OKX_AI_API_KEY", ""),
         }
         forced = provider or os.environ.get("LLM_PROVIDER", "")
@@ -744,6 +806,13 @@ class LLMReasoner:
         elif self._provider == "anthropic":
             text = _call_anthropic(self._keys["anthropic"], messages, temperature=temperature,
                                    max_tokens=max_tokens)
+        elif self._provider == "deepseek":
+            text = _call_deepseek(self._keys["deepseek"], messages, temperature=temperature,
+                                  max_tokens=max_tokens)
+        elif self._provider == "openai_compatible":
+            text = _call_generic_openai_compatible(self._keys["openai_compatible"], messages,
+                                                    temperature=temperature,
+                                                    max_tokens=max_tokens)
         elif self._provider == "okx":
             text = _call_okx_ai(self._keys["okx"], messages, temperature=temperature,
                                 max_tokens=max_tokens)
@@ -775,12 +844,13 @@ class LLMReasoner:
     @staticmethod
     def _system_prompt() -> str:
         return (
-            "You are the reasoning engine of Genesis Protocol, an AI-powered "
-            "Uniswap V4 Hook strategy system on X Layer blockchain.  You operate "
-            "within a 5-layer cognitive architecture (Perception, Analysis, Planning, "
-            "Evolution, Meta-Cognition).  Provide precise, quantitative, and "
-            "actionable reasoning.  Reference specific numbers from the data.  "
-            "Write in professional analyst prose — no bullet-point lists unless "
+            "You are Genesis Protocol's AI reasoning engine — an autonomous DeFi agent "
+            "operating Uniswap V4 Hook strategies on X Layer (Chain 196). You analyze "
+            "market microstructure, volatility regimes, and MEV patterns to optimize "
+            "liquidity provision. Provide concise, quantitative analysis.  "
+            "You operate within a 5-layer cognitive architecture (Perception, Analysis, "
+            "Planning, Evolution, Meta-Cognition).  Reference specific numbers from the "
+            "data.  Write in professional analyst prose — no bullet-point lists unless "
             "explicitly requested.  Never fabricate data."
         )
 
