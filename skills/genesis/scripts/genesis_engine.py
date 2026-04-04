@@ -1,5 +1,6 @@
 """Genesis Engine - 5-Layer Cognitive Architecture for the Genesis Protocol.
 Layers: Perception -> Analysis -> Planning -> Evolution -> Meta-Cognition.
+LLM-augmented reasoning with statistical ML foundation.
 Only stdlib imports. All decisions logged to DecisionJournal.
 """
 import logging
@@ -13,6 +14,7 @@ from .market_oracle import MarketOracle
 from .wallet_manager import WalletManager
 from .decision_journal import DecisionJournal
 from .strategy_manager import StrategyManager
+from .llm_reasoning import LLMReasoner
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +208,10 @@ class GenesisEngine:
         self._predictions: list = []   # [(ts, prediction_dict, outcome_dict|None)]
         self._prediction_accuracy = 0.5
         self._ml_model = StatisticalModel()
-        logger.info("GenesisEngine initialized (paused=%s, mode=%s)", config.PAUSED, config.MODE)
+        self._llm = LLMReasoner()
+        self._llm_reasoning_cache: dict = {}  # Store latest LLM reasoning for UI
+        logger.info("GenesisEngine initialized (paused=%s, mode=%s, llm=%s)",
+                     config.PAUSED, config.MODE, self._llm.provider)
 
     # ═══════════════════════════════════════════════════════════════════
     # LAYER 1 — PERCEPTION: gather world state
@@ -278,6 +283,21 @@ class GenesisEngine:
                 "momentum": momentum,
                 "bayesian_regime": bayesian_regime,
             }
+            # LLM-augmented market analysis
+            try:
+                llm_analysis = self._llm.analyze_market({
+                    "regimes": regimes,
+                    "ml_forecast": lr_forecast,
+                    "vol_forecast": vol_forecast,
+                    "momentum": momentum,
+                    "bayesian_regime": bayesian_regime,
+                    "prices": self._world_state.get("prices", {}),
+                })
+                self._analysis_cache["llm_analysis"] = llm_analysis
+                self._llm_reasoning_cache["analysis"] = llm_analysis
+                logger.info("LLM analysis: %s", llm_analysis.get("headline", ""))
+            except Exception as llm_exc:
+                logger.warning("LLM analysis fallback: %s", llm_exc)
             self._last_analysis = time.time()
             logger.info("Analysis: %d regimes, %d mismatches, %d anomalies",
                         len(regimes), len(mismatches), len(anomalies))
@@ -362,6 +382,22 @@ class GenesisEngine:
                         "reasoning": f"Regime {best_r['regime_name']} confidence {best_c:.2f}",
                         "params": {"regime": best_r["regime_name"], "market_data": best_r},
                     })
+                    # LLM-generated strategy rationale
+                    try:
+                        rationale = self._llm.generate_strategy_rationale(
+                            preset=best_r["regime_name"],
+                            regime=bayesian_regime.get("regime", "unknown") if bayesian_regime else "unknown",
+                            confidence=final_conf,
+                            market_data={
+                                "prices": self._world_state.get("prices", {}),
+                                "volatility": avg_vol,
+                                "momentum": self._analysis_cache.get("momentum", {}),
+                            }
+                        )
+                        actions[-1]["llm_rationale"] = rationale
+                        self._llm_reasoning_cache["strategy_rationale"] = rationale
+                    except Exception as llm_exc:
+                        logger.warning("LLM rationale fallback: %s", llm_exc)
             # Default hold
             if not actions:
                 actions.append({"type": "hold", "confidence": 1.0,
@@ -460,6 +496,24 @@ class GenesisEngine:
                 "prediction_accuracy": round(self._prediction_accuracy, 3),
                 "preferences": dict(self._preferences),
             }
+            # LLM-powered self-reflection
+            try:
+                history = [{"action": p[1].get("action", ""), "confidence": p[1].get("confidence", 0),
+                            "executed": p[2] is not None} for p in self._predictions[-20:]]
+                llm_reflection = self._llm.meta_reflect(
+                    history=history,
+                    performance={
+                        "accuracy": self._prediction_accuracy,
+                        "total_predictions": len(self._predictions),
+                        "preferences": dict(self._preferences),
+                        "cycle_count": self._cycle_count,
+                    }
+                )
+                insights["llm_reflection"] = llm_reflection
+                self._llm_reasoning_cache["reflection"] = llm_reflection
+                logger.info("LLM reflection: %s", llm_reflection.get("summary", "")[:100])
+            except Exception as llm_exc:
+                logger.warning("LLM reflection fallback: %s", llm_exc)
             self.journal.log_decision(0, "META_COGNITION",
                 f"Reflection: accuracy={self._prediction_accuracy:.2%}, resolved={resolved}",
                 insights)
@@ -477,6 +531,27 @@ class GenesisEngine:
         """Dispatch actions to managers. Respects CONFIDENCE_THRESHOLD and PAUSED."""
         results = []
         for action in actions:
+            atype, conf = action["type"], action.get("confidence", 0)
+            params = action.get("params", {})
+            # Generate LLM explanation for every significant action
+            if atype != "hold":
+                try:
+                    explanation = self._llm.explain_decision(
+                        decision_type=atype.upper(),
+                        context={
+                            "confidence": conf,
+                            "reasoning": action.get("reasoning", ""),
+                            "params": params,
+                            "market_state": {
+                                k: v for k, v in self._analysis_cache.items()
+                                if k in ("regimes", "momentum", "bayesian_regime")
+                            },
+                        }
+                    )
+                    action["llm_explanation"] = explanation
+                    self._llm_reasoning_cache[f"decision_{atype}"] = explanation
+                except Exception:
+                    pass
             atype, conf = action["type"], action.get("confidence", 0)
             params = action.get("params", {})
             if conf < config.CONFIDENCE_THRESHOLD:
@@ -562,4 +637,6 @@ class GenesisEngine:
             "ml_momentum": self._ml_model.get_momentum_signal(),
             "ml_forecast": self._ml_model.linear_regression_predict(),
             "bayesian_regime": self._ml_model._bayesian_prior,
+            "llm_provider": self._llm.provider,
+            "llm_reasoning": self._llm_reasoning_cache,
         }

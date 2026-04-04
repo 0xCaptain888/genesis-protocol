@@ -43,6 +43,7 @@ export const PRESETS = {
   calm: { name: '稳健积累型', modules: [CFG.dynamicFee, CFG.rebalance], risk: '保守', color: '#22d3ee' },
   volatile: { name: '波动防御型', modules: [CFG.dynamicFee, CFG.mev, CFG.rebalance], risk: '防御', color: '#a855f7' },
   trend: { name: '趋势跟踪型', modules: [CFG.dynamicFee, CFG.mev], risk: '激进', color: '#00f0ff' },
+  balanced: { name: '均衡型', modules: [CFG.dynamicFee, CFG.rebalance], risk: '均衡', color: '#eab308' },
 };
 
 export const MOD_NAMES = {

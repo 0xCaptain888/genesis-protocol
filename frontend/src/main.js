@@ -9,6 +9,7 @@ import * as strategy from './modules/strategy.js';
 import * as journal from './modules/journal.js';
 import * as nft from './modules/nft.js';
 import * as x402 from './modules/x402.js';
+import * as aiDecision from './modules/aiDecision.js';
 
 // ── State ──
 let provider = null, signer = null, assemblerC = null, nftC = null, connected = false;
@@ -85,10 +86,13 @@ function startGuidedTour() {
   const steps = [
     { target: '#market', msg: '第1步: 查看 AI 实时市场感知 — 波动率、制度分类、资金费率' },
     { target: '#ai-engine', msg: '第2步: 启动 AI 认知引擎 — 5层认知循环实时推理' },
-    { target: '#dashboard', msg: '第3步: 链上实时仪表盘 — 所有数据来自 X Layer 合约' },
-    { target: '#strategies', msg: '第4步: 部署策略 — 连接钱包后可真实部署' },
-    { target: '#nfts', msg: '第5步: 策略 NFT — 达标策略自动铸造为链上 NFT' },
-    { target: '#x402', msg: '第6步: x402 支付协议 — AI Agent 间的链上微支付' },
+    { target: '#ai-decision', msg: '第3步: AI 决策面板 — 置信度、市场区间、LLM 推理链' },
+    { target: '#dashboard', msg: '第4步: 链上实时仪表盘 — 所有数据来自 X Layer 合约' },
+    { target: '#activity-timeline', msg: '第5步: 链上活动时间线 — 所有交易按时间排序' },
+    { target: '#backtest', msg: '第6步: 回测分析 — 各策略预设的历史表现对比' },
+    { target: '#strategies', msg: '第7步: 部署策略 — 连接钱包后可真实部署' },
+    { target: '#nfts', msg: '第8步: 策略 NFT — 达标策略自动铸造为链上 NFT' },
+    { target: '#x402', msg: '第9步: x402 支付协议 — AI Agent 间的链上微支付' },
   ];
   let i = 0;
   function showStep() {
@@ -123,12 +127,20 @@ function initApp() {
   x402.init();
   dashboard.init();
 
+  // Initialize AI Decision Panel (needs rpc references from dashboard)
+  const { rpcProvider: rp, rpcAssembler: ra, rpcNft: rn } = dashboard;
+  aiDecision.init(rp, ra, rn);
+  aiDecision.updateBacktestFromState(EMBEDDED_AGENT_STATE);
+
   // Handle chart resize for price chart
   window.addEventListener('resize', () => {
     const pc = market.getPriceChart();
     if (pc) pc.resize();
   });
 }
+
+// Export aiDecision for engine access
+export { aiDecision };
 
 // Start when DOM is ready
 if (document.readyState === 'loading') {

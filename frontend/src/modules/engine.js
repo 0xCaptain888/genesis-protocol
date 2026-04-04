@@ -2,7 +2,7 @@
 
 import { CFG } from '../config.js';
 import { marketData, simulatePrice, computeVolatility, classifyRegime } from './market.js';
-import { toast, getConnected, getSigner } from '../main.js';
+import { toast, getConnected, getSigner, aiDecision } from '../main.js';
 
 let cycleRunning = false;
 
@@ -27,6 +27,11 @@ export async function runCognitiveCycle() {
 
   for (let i = 1; i <= 5; i++) setDot(i, '#374151');
 
+  // Clear and prepare AI Decision Panel
+  if (aiDecision) {
+    aiDecision.clearLLMReasoning();
+  }
+
   const ethP = marketData.eth ? marketData.eth.last : simulatePrice(1850, 100);
   const btcP = marketData.btc ? marketData.btc.last : simulatePrice(84000, 3000);
   const okbP = marketData.okb ? marketData.okb.last : simulatePrice(48, 3);
@@ -38,6 +43,10 @@ export async function runCognitiveCycle() {
   addLog('  ETH/USDT: $' + ethP.toFixed(2) + '  BTC/USDT: $' + btcP.toFixed(0) + '  OKB/USDT: $' + okbP.toFixed(2));
   const dataLive = !!(marketData.eth && marketData.btc);
   addLog('  数据源: ' + (dataLive ? 'OKX Market API (实时)' : '本地模拟 (OKX API 不可用)'), dataLive ? 'text-green-400' : 'text-yellow-400');
+  if (aiDecision) {
+    aiDecision.activateReasoningStep('rstep-data');
+    aiDecision.addLLMReasoning('[Market Data Ingestion] Fetched real-time prices: ETH=$' + ethP.toFixed(2) + ', BTC=$' + btcP.toFixed(0) + ', OKB=$' + okbP.toFixed(2) + '. Data source: ' + (dataLive ? 'OKX API (live)' : 'Simulation fallback') + '.', 'text-cyan-400');
+  }
   await sleep(400);
 
   // L2: Analysis
@@ -56,6 +65,14 @@ export async function runCognitiveCycle() {
     (Math.sign(marketData.eth.last - marketData.eth.open) === Math.sign(marketData.btc.last - marketData.btc.open) ? '0.92 (同向)' : '0.45 (分化)') :
     '0.87 (历史均值)';
   addLog('  趋势检测: ' + trend + (ethChg ? ' (ETH 24h: ' + (ethChg >= 0 ? '+' : '') + ethChg + '%)' : '') + '  |  BTC 相关性: ' + corrVal);
+  if (aiDecision) {
+    aiDecision.activateReasoningStep('rstep-analysis');
+    const regimeKey = parseFloat(vol) > 3 ? 'volatile' : parseFloat(vol) > 1 ? 'trending' : 'calm';
+    const bayesianStr = _embeddedState?.ml_state?.bayesian_prior ?
+      'Calm=' + (_embeddedState.ml_state.bayesian_prior.calm * 100).toFixed(1) + '%, Volatile=' + (_embeddedState.ml_state.bayesian_prior.volatile * 100).toFixed(1) + '%, Trending=' + (_embeddedState.ml_state.bayesian_prior.trending * 100).toFixed(1) + '%' : '--';
+    aiDecision.addLLMReasoning('[Analysis] Volatility=' + vol + '% => Regime: ' + regime.label + '. Trend: ' + trend + '. BTC correlation: ' + corrVal + '. Bayesian prior: ' + bayesianStr + '.', 'text-purple-400');
+    aiDecision.updateRegimeIndicator(regimeKey, parseFloat(vol), trend, bayesianStr);
+  }
   await sleep(400);
 
   // L3: Planning
@@ -83,6 +100,10 @@ export async function runCognitiveCycle() {
   addLog('  费率范围: ' + regime.fee);
   if (hasChainData) {
     addLog('  链上状态: ' + stratCount + ' 个活跃策略, ' + decCount + ' 条决策记录', 'text-gray-500');
+  }
+  if (aiDecision) {
+    aiDecision.activateReasoningStep('rstep-strategy');
+    aiDecision.addLLMReasoning('[Strategy Selection] Recommended action: ' + action + ' (' + actionCn + '). Confidence: ' + confidence + ' (base=0.55' + (dataLive ? ' +live=0.15' : '') + (realVol !== null ? ' +vol=0.10' : '') + '). Preset: ' + regime.preset + '. Fee range: ' + regime.fee + '.', 'text-green-400');
   }
   await sleep(400);
 
@@ -123,6 +144,31 @@ export async function runCognitiveCycle() {
   addLog('  系统安全状态: PAUSED=true, MODE=paper, DRY_RUN=true');
   addLog('  链上合约: GenesisHookAssembler (' + CFG.assembler.slice(0, 10) + '...)');
   addLog('  OnchainOS: 5 钱包体系 (master/strategy/income/reserve/rebalance)');
+  if (aiDecision) {
+    aiDecision.activateReasoningStep('rstep-confidence');
+    aiDecision.addLLMReasoning('[Meta-cognition] Decision quality: ' + qualityScore + '/100. Bias check: ' + (biasDetected ? 'WARNING - consecutive same-direction bias detected' : 'No significant bias') + '. System mode: PAPER/DRY_RUN. Final confidence: ' + confidence + '.', 'text-pink-400');
+    // Update full decision panel
+    const regimeKey = parseFloat(vol) > 3 ? 'volatile' : parseFloat(vol) > 1 ? 'trending' : 'calm';
+    const bayesianStr = _embeddedState?.ml_state?.bayesian_prior ?
+      'Calm=' + (_embeddedState.ml_state.bayesian_prior.calm * 100).toFixed(1) + '%, Volatile=' + (_embeddedState.ml_state.bayesian_prior.volatile * 100).toFixed(1) + '%, Trending=' + (_embeddedState.ml_state.bayesian_prior.trending * 100).toFixed(1) + '%' : '--';
+    aiDecision.updateDecisionPanel({
+      confidence: parseFloat(confidence),
+      regime: regimeKey,
+      vol: parseFloat(vol),
+      trend,
+      bayesianStr,
+      action,
+      actionCn,
+      rationale: '基于 ' + vol + '% 波动率 + ' + trend + ' 趋势 + ' + (dataLive ? '实时' : '模拟') + '数据，AI 推荐此策略以最优化收益/风险比。',
+      whyDetails: [
+        '<span class="text-cyan-400">市场数据:</span> ETH=$' + ethP.toFixed(2) + ', Vol=' + vol + '%, 趋势=' + trend,
+        '<span class="text-purple-400">分析结论:</span> ' + regime.label + ' 区间，' + (parseFloat(vol) > 2 ? '需防御性策略' : parseFloat(vol) > 1 ? '可跟踪趋势' : '适合稳健积累'),
+        '<span class="text-green-400">置信度构成:</span> base=0.55' + (dataLive ? ' + live_data=0.15' : '') + (realVol !== null ? ' + real_vol=0.10' : '') + ' = ' + confidence,
+        '<span class="text-yellow-400">风险评估:</span> 质量评分 ' + qualityScore + '/100, 偏差检测: ' + (biasDetected ? '警告' : '正常'),
+        '<span class="text-pink-400">元认知:</span> 一致性 ' + consistency + '%, 循环次数 ' + totalCycles,
+      ],
+    });
+  }
   await sleep(300);
 
   // Summary

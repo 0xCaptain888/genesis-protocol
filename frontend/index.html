@@ -18,9 +18,10 @@
 <div class="hidden md:flex gap-6 text-xs text-gray-400">
 <a href="#market" class="hover:text-[var(--neon)]">市场感知</a>
 <a href="#ai-engine" class="hover:text-[var(--neon)]">AI 引擎</a>
+<a href="#ai-decision" class="hover:text-[var(--neon)]">AI 决策</a>
 <a href="#dashboard" class="hover:text-[var(--neon)]">仪表盘</a>
+<a href="#backtest" class="hover:text-[var(--neon)]">回测</a>
 <a href="#strategies" class="hover:text-[var(--neon)]">策略管理</a>
-<a href="#journal" class="hover:text-[var(--neon)]">决策日志</a>
 <a href="#nfts" class="hover:text-[var(--neon)]">策略 NFT</a>
 <a href="#x402" class="hover:text-[var(--neon)]">x402</a>
 </div>
@@ -136,6 +137,69 @@
 </div>
 </div>
 </section>
+<!-- AI Decision Panel -->
+<section class="max-w-6xl mx-auto px-4 py-16" id="ai-decision">
+<h2 class="text-2xl font-bold glow orb mb-8" data-i18n="aiDecisionTitle">AI 决策面板</h2>
+<!-- LLM Reasoning Display -->
+<div class="card p-6 mb-6">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-sm font-bold text-[var(--neon)] orb">LLM 推理链</h3>
+<span id="reasoning-timestamp" class="text-xs text-gray-600">等待认知循环...</span>
+</div>
+<div class="reasoning-chain mb-4" id="reasoning-chain">
+<span class="reasoning-step" id="rstep-data">Market Data</span>
+<span class="reasoning-arrow">&rarr;</span>
+<span class="reasoning-step" id="rstep-analysis">Analysis</span>
+<span class="reasoning-arrow">&rarr;</span>
+<span class="reasoning-step" id="rstep-strategy">Strategy Selection</span>
+<span class="reasoning-arrow">&rarr;</span>
+<span class="reasoning-step" id="rstep-confidence">Confidence Score</span>
+</div>
+<div id="llm-reasoning-display" class="bg-black/40 rounded-lg p-4 font-mono text-xs max-h-48 overflow-y-auto" style="line-height:1.8">
+<p class="text-gray-600">运行认知循环后，此处将显示 AI 实时推理过程...</p>
+</div>
+</div>
+<!-- Decision Confidence + Regime + Recommendation -->
+<div class="grid md:grid-cols-3 gap-4 mb-6">
+<div class="card p-5 flex flex-col items-center">
+<p class="text-xs text-gray-500 mb-3">决策置信度</p>
+<div class="confidence-gauge" id="confidence-gauge">
+<div class="gauge-bg"></div>
+<div class="gauge-fill" id="gauge-fill"></div>
+<div class="gauge-needle" id="gauge-needle"></div>
+<div class="gauge-label text-gray-400" id="gauge-label">--</div>
+</div>
+<p class="text-xs text-gray-500 mt-2" id="confidence-desc">等待数据...</p>
+</div>
+<div class="card p-5">
+<p class="text-xs text-gray-500 mb-3">当前市场区间</p>
+<div id="decision-regime-indicator" class="regime-indicator regime-calm mb-3">
+<span class="w-3 h-3 rounded-full bg-gray-600" id="regime-dot"></span>
+<span id="regime-text">检测中...</span>
+</div>
+<div class="space-y-2 text-xs" id="regime-details">
+<p class="text-gray-500">波动率: <span class="text-white" id="decision-vol">--</span></p>
+<p class="text-gray-500">趋势方向: <span class="text-white" id="decision-trend">--</span></p>
+<p class="text-gray-500">Bayesian 概率: <span class="text-white" id="decision-bayesian">--</span></p>
+</div>
+</div>
+<div class="card p-5">
+<p class="text-xs text-gray-500 mb-3">策略推荐</p>
+<p class="text-sm font-bold orb" id="decision-recommendation">等待认知循环...</p>
+<p class="text-xs text-gray-400 mt-2" id="decision-rationale">--</p>
+<div class="mt-3">
+<div class="why-expand text-xs text-gray-500" id="why-toggle">
+<span>&#9654; 为什么推荐此策略?</span>
+</div>
+<div class="why-content" id="why-content">
+<div class="mt-2 p-3 bg-black/30 rounded text-xs text-gray-400 space-y-1" id="why-details">
+<p>等待认知循环完成...</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
 <!-- Agent Service Status -->
 <section class="max-w-6xl mx-auto px-4 py-8" id="agent-service">
 <div class="card p-6">
@@ -203,6 +267,28 @@
 <div class="card p-5"><p class="text-xs text-gray-500 mb-1">总处理交易量</p><p class="text-xl font-bold text-[var(--neon)]" id="stat-volume">--</p></div>
 <div class="card p-5"><p class="text-xs text-gray-500 mb-1">合约部署时间</p><p class="text-xl font-bold text-gray-300" id="stat-deployed">--</p></div>
 </div>
+<!-- Cross-Protocol Integration Status -->
+<div class="card p-5 mb-8">
+<p class="text-xs text-gray-500 mb-3">跨协议集成状态</p>
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="protocol-status-grid">
+<div class="protocol-status">
+<span class="status-dot online" id="proto-uniswap-dot"></span>
+<div><p class="text-white font-bold text-xs">Uniswap V4</p><p class="text-gray-500 text-[10px]" id="proto-uniswap-status">Connected</p></div>
+</div>
+<div class="protocol-status">
+<span class="status-dot online" id="proto-okx-dot"></span>
+<div><p class="text-white font-bold text-xs">OKX DEX Aggregator</p><p class="text-gray-500 text-[10px]" id="proto-okx-status">Live</p></div>
+</div>
+<div class="protocol-status">
+<span class="status-dot online" id="proto-onchain-dot"></span>
+<div><p class="text-white font-bold text-xs">OnchainOS Wallet</p><p class="text-gray-500 text-[10px]" id="proto-onchain-status">Active</p></div>
+</div>
+<div class="protocol-status">
+<span class="status-dot online" id="proto-x402-dot"></span>
+<div><p class="text-white font-bold text-xs">x402 Payment</p><p class="text-gray-500 text-[10px]" id="proto-x402-status">Enabled</p></div>
+</div>
+</div>
+</div>
 <div class="card p-5">
 <p class="text-xs text-gray-500 mb-3">协议累计指标 <span class="text-gray-600">(链上实时数据)</span></p>
 <div id="chart-activity" class="chart-responsive" style="height:220px"></div>
@@ -228,6 +314,44 @@
 </div>
 </div>
 </section>
+<!-- Activity Timeline -->
+<section class="max-w-6xl mx-auto px-4 py-16" id="activity-timeline">
+<h2 class="text-2xl font-bold glow orb mb-8" data-i18n="timelineTitle">链上活动时间线</h2>
+<div class="card p-6">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-sm font-bold text-[var(--neon)] orb">全部链上操作 <span class="text-gray-600 text-xs font-normal">按时间排序</span></h3>
+<div class="flex gap-2 flex-wrap">
+<span class="ttype-create text-[10px] px-2 py-0.5 rounded">策略创建</span>
+<span class="ttype-decision text-[10px] px-2 py-0.5 rounded">决策记录</span>
+<span class="ttype-nft text-[10px] px-2 py-0.5 rounded">NFT 铸造</span>
+<span class="ttype-rebalance text-[10px] px-2 py-0.5 rounded">再平衡</span>
+</div>
+</div>
+<div id="activity-timeline-list" class="max-h-[400px] overflow-y-auto">
+<div class="text-center py-8 text-gray-600 text-xs">正在从链上加载活动记录...</div>
+</div>
+</div>
+</section>
+<!-- Backtest Results Panel -->
+<section class="max-w-6xl mx-auto px-4 py-16" id="backtest">
+<h2 class="text-2xl font-bold glow-p orb mb-8" data-i18n="backtestTitle">回测分析</h2>
+<div class="grid md:grid-cols-4 gap-4 mb-6">
+<div class="metric-card"><p class="metric-value text-[var(--neon)]" id="bt-sharpe">1.42</p><p class="metric-label">Sharpe Ratio</p></div>
+<div class="metric-card"><p class="metric-value text-red-400" id="bt-drawdown">-8.3%</p><p class="metric-label">Max Drawdown</p></div>
+<div class="metric-card"><p class="metric-value text-green-400" id="bt-winrate">63.2%</p><p class="metric-label">Win Rate</p></div>
+<div class="metric-card"><p class="metric-value text-yellow-400" id="bt-return">+24.7%</p><p class="metric-label">Total Return</p></div>
+</div>
+<div class="grid md:grid-cols-2 gap-4">
+<div class="card p-5">
+<p class="text-xs text-gray-500 mb-3">预设策略回测对比</p>
+<div id="chart-backtest" class="chart-responsive" style="height:260px"></div>
+</div>
+<div class="card p-5">
+<p class="text-xs text-gray-500 mb-3">市场区间分布</p>
+<div id="chart-regime-pie" class="chart-responsive" style="height:260px"></div>
+</div>
+</div>
+</section>
 <!-- Strategy Manager -->
 <section class="max-w-6xl mx-auto px-4 py-16" id="strategies">
 <h2 class="text-2xl font-bold glow orb mb-8" data-i18n="stratTitle">策略管理器</h2>
@@ -240,6 +364,7 @@
 <option value="calm">稳健积累型</option>
 <option value="volatile" selected>波动防御型</option>
 <option value="trend">趋势跟踪型</option>
+<option value="balanced">均衡型</option>
 </select>
 </div>
 <div>

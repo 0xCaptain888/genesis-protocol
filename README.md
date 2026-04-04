@@ -22,7 +22,10 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 - **Hook 模板引擎** -- 5 个可组合 Solidity 模块（DynamicFee、MEVProtection、AutoRebalance、LiquidityShield、Oracle），由 AI 组装成自定义 V4 Hook 配置
 - **5 个 Uniswap AI 插件集成** -- uniswap-hooks、uniswap-trading、uniswap-cca、uniswap-driver、pay-with-any-token
 - **6 个 Onchain OS Skill 集成** -- wallet、market、trade、security、payment、defi-invest
-- **5 层 AI 认知架构** -- 感知层、分析层、规划层、进化层、元认知层
+- **5 层 AI 认知架构** -- 感知层、分析层、规划层、进化层、元认知层，每层集成 LLM 推理生成人类可读解释
+- **LLM 推理引擎** -- 支持 OpenAI GPT-4、Anthropic Claude、OKX AI 三大模型，配合精密模板回退，确保无 API Key 时仍输出高质量推理
+- **策略回测引擎** -- 基于 OKX 历史 K 线数据的 BacktestEngine，计算 Sharpe/Sortino 比率、最大回撤、区间分布等机构级指标
+- **跨协议 DeFi 集成** -- DEX 路由比较、跨平台套利扫描、多协议收益优化、X Layer 跨链桥状态监控
 - **策略 NFT** -- 经验证的策略铸造为 ERC-721，全链上元数据
 - **链上决策日志** -- 每个 AI 决策都带推理哈希记录在链上，完全可审计
 - **x402 支付变现** -- 信号查询、策略订阅、参数购买、NFT 授权。通过 Uniswap 自动兑换**支持任意代币支付**
@@ -128,7 +131,9 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 - GOKB Token: [`0x81902d53cc0fd247196508af9Df596Cd387D7321`](https://www.oklink.com/xlayer/address/0x81902d53cc0fd247196508af9Df596Cd387D7321)
 - 流动性添加: 范围 [-6000, +6000]，3 笔真实 Swap 已通过 DynamicFee + MEV Protection 模块执行
 
-**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 65 决策日志 + 12 性能更新 + 6 真实 V4 Swap (含 WOKB) + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 + 13 WOKB 池交易 = **142+ 笔主网交易**
+**主网链上活动**: 9 个合约部署 + 5 模块注册 + 9 策略创建 + 72 决策日志 + 12 性能更新 + 6 真实 V4 Swap (含 WOKB) + 6 策略 NFT 铸造 + 22 自主 Agent 认知循环 + 13 WOKB 池交易 + 7 种不同交易类型 = **157+ 笔主网交易**
+
+**7 种链上交易类型**: `createStrategy`、`logDecision`、`updatePerformance`、`deactivateStrategy`、`mint`、`updateVolatility`、`pushObservation`
 
 浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V4 Hook](https://www.oklink.com/xlayer/address/0x174a2450b342042AAe7398545f04B199248E69c0)
 
@@ -246,6 +251,86 @@ Genesis 以 Uniswap V4 作为核心 DeFi 原语：
 | **进化层** | 24小时 | 元学习：根据历史表现调整阈值 |
 | **元认知层** | 24小时 | 自我评估：评估决策质量、检测偏差 |
 
+每一层均集成 LLM 推理引擎（见下文），生成人类可读的决策解释，并将推理哈希记录在链上。
+
+### LLM 推理引擎 (NEW)
+
+`LLMReasoner` 类为每一个 AI 决策注入自然语言推理能力，让链上日志从"黑箱数字"升级为"可审计叙事"。
+
+**多模型支持**:
+
+| 提供商 | 模型 | 用途 |
+|--------|------|------|
+| **OpenAI** | GPT-4 | 复杂策略规划与风险评估 |
+| **Anthropic** | Claude | 元认知自省与偏差检测 |
+| **OKX AI** | OKX 大模型 | X Layer 原生推理，低延迟 |
+
+**核心能力**:
+- `analyze_market()` -- 感知层：将原始市场数据转化为结构化市场叙事
+- `explain_decision()` -- 分析层：解释每个策略决策背后的逻辑
+- `risk_assessment()` -- 分析层：量化风险并生成人类可读的风险报告
+- `generate_strategy_rationale()` -- 规划层：为策略选择生成完整推理链
+- `meta_reflect()` -- 进化/元认知层：自我评估决策质量，检测认知偏差
+
+**精密模板回退**: 当无 API Key 可用时，系统自动切换到基于规则的模板引擎，使用置信度语言映射、市场区间描述符和策略理由模板，确保输出质量不降级。内置 LRU 缓存（256 条目、5 分钟 TTL）和速率限制（30 RPM），零第三方依赖。
+
+### 策略回测引擎 (NEW)
+
+`BacktestEngine` 基于 OKX 历史 K 线数据，对 Genesis 全部 4 个策略预设进行量化回测。
+
+**模拟流程** (每根 K 线):
+1. 计算滚动 EWMA 波动率并检测市场区间
+2. 根据检测区间应用对应预设的费率结构
+3. 从 K 线成交量估算 Swap 量
+4. 计算费率收入、无常损失、再平衡成本
+5. 累计 P&L = 费率收入 - 无常损失 - 再平衡成本
+
+**机构级指标输出**:
+
+| 指标 | 说明 |
+|------|------|
+| **Sharpe Ratio** | 风险调整后收益（无风险利率基准） |
+| **Sortino Ratio** | 仅考虑下行风险的风险调整收益 |
+| **Max Drawdown** | 最大回撤幅度及恢复时间 |
+| **Win Rate** | 盈利周期占比 |
+| **Regime Distribution** | 各市场区间出现频率 |
+| **Fee Revenue / IL Loss** | 费率收入与无常损失的详细分解 |
+
+```bash
+python3 skills/genesis/scripts/backtester.py  # 运行回测
+```
+
+### 跨协议 DeFi 集成 (NEW)
+
+`CrossProtocolIntegration` 模块将 Genesis 从 Uniswap V4 专属扩展为 X Layer 全生态 DeFi 聚合层。
+
+| 功能 | 说明 |
+|------|------|
+| **DEX 路由比较** | Hook 池费率 vs OKX DEX 聚合器，自动选择最优路径 |
+| **套利扫描** | 跨 DEX 价差检测，发现 Hook 池与聚合器之间的套利机会 |
+| **收益优化** | 跨 X Layer 借贷协议比较供给/借贷利率，为闲置资金寻找最优收益 |
+| **跨链桥监控** | OKB Bridge 状态检查，确保跨链操作安全 |
+
+所有外部调用优雅降级 -- 当端点不可达时回退到模拟数据，保证离线/演示环境可用。
+
+### 端到端演示脚本 (NEW)
+
+`scripts/e2e_demo.py` -- 一键演示 Genesis Protocol 完整生命周期：
+
+```bash
+python3 scripts/e2e_demo.py
+```
+
+演示流程覆盖:
+1. **实时市场数据** -- 从 OKX 公共 API 获取真实价格
+2. **5 层认知循环** -- 感知 → 分析 → 规划 → 进化 → 元认知 完整执行
+3. **LLM 推理** -- 通过 LLMReasoner 生成人类可读解释
+4. **策略选择** -- 基于 AI 分析结果选择最优预设
+5. **链上验证** -- 从 X Layer 主网读取合约状态
+6. **决策日志** -- 创建带完整推理链的决策记录
+7. **NFT 资格检查** -- 评估策略是否满足铸造阈值
+8. **汇总报告** -- 格式化输出完整循环结果
+
 ### 智能合约
 
 **GenesisHookAssembler** -- 核心"元 Hook"工厂。接受 `IGenesisModule` 地址数组，将 `beforeSwap`/`afterSwap` 调用分发到每个模块，并聚合结果（最高费率优先，任何模块可阻断）。内置策略注册表和决策日志。
@@ -319,6 +404,7 @@ cd frontend && npm run build                 # 构建到 docs/
 | `journal.js` | 决策日志时间线 |
 | `nft.js` | 策略 NFT 铸造 + 动态 SVG |
 | `x402.js` | x402 支付协议集成 |
+| `aiDecision.js` | **NEW** -- AI 决策面板：LLM 推理展示、置信度仪表盘、市场区间可视化、活动时间线、回测图表（Sharpe/收益曲线）、跨协议状态 |
 
 ---
 
@@ -367,17 +453,18 @@ python3 demo.py
 | 指标 | 数值 |
 |------|------|
 | 部署合约 | 9 (Assembler + V4Hook + HookDeployer + 5 Module + StrategyNFT) |
-| 已创建策略 | 7 (含 full_defense 5模块策略) |
+| 已创建策略 | 9 (含 full_defense 5模块策略) |
 | V4 Pool | 2 (GALPHA/GBETA + **WOKB/GOKB 真实价值池**) |
 | 真实 V4 Swap | 6 (通过 Hook 模块分发, 含 WOKB 真实价值 Swap) |
-| 决策日志条目 | 65+ (含自主 Agent 认知循环 + ML 贝叶斯/EWMA/LR 决策 + OnchainOS API 实时数据) |
+| 决策日志条目 | 72+ (含自主 Agent 认知循环 + ML 贝叶斯/EWMA/LR 决策 + OnchainOS API 实时数据 + LLM 推理) |
 | 性能更新 | 12+ |
-| 策略 NFT 铸造 | 5 (含 full_defense 全模块 NFT) |
+| 策略 NFT 铸造 | 6 (含 full_defense 全模块 NFT) |
 | 自主 Agent 循环 | 3 轮 (含参数进化 + 元认知自省) |
 | ML 链上决策 | 9 (贝叶斯regime分类、EWMA波动率预测、线性回归预测、SGD权重更新、Agent心跳、DeFi基准对比、TWAP预言机更新) |
 | WOKB 池交易 | 13 (包装OKB + 部署 + 初始化 + 流动性 + 3笔Swap) |
 | OnchainOS 集成验证 | 49 项技能测试, 35 通过, 覆盖 7 大类 |
-| 总主网交易数 | **142+** |
+| 链上交易类型 | 7 种 (createStrategy, logDecision, updatePerformance, deactivateStrategy, mint, updateVolatility, pushObservation) |
+| 总主网交易数 | **157+** |
 
 #### X Layer 测试网 (Chain 1952) -- 开发阶段
 
@@ -495,6 +582,9 @@ genesis-protocol/
 │       ├── uniswap_cca.py            CCA 密封竞价拍卖集成
 │       ├── uniswap_driver.py         流动性规划与路由优化
 │       ├── defi_analyzer.py          DeFi 协议分析器
+│       ├── llm_reasoning.py          LLM 推理引擎 (OpenAI/Claude/OKX AI + 模板回退)
+│       ├── backtester.py             策略回测引擎 (Sharpe/Sortino/MaxDD)
+│       ├── cross_protocol.py         跨协议 DeFi 集成 (DEX 路由/套利/收益/桥)
 │       ├── multi_agent.py            多 Agent 协调器
 │       └── main.py                    CLI 入口
 │
@@ -510,6 +600,7 @@ genesis-protocol/
 │   ├── agent_service.py              持续运行 Agent 守护进程 (HTTP :8402)
 │   ├── x402_server.py                x402 支付服务器 (链上验证)
 │   ├── run_agent_cycles.py           Agent 认知循环生成器
+│   ├── e2e_demo.py                   端到端完整生命周期演示脚本
 │   └── verify_onchainos_skills.py    OnchainOS 集成验证 (49 项测试)
 │
 ├── frontend/                          Vite + ES 模块前端源码
@@ -528,7 +619,8 @@ genesis-protocol/
 │           ├── strategy.js           策略管理器
 │           ├── journal.js            决策日志
 │           ├── nft.js                策略 NFT
-│           └── x402.js               x402 支付协议
+│           ├── x402.js               x402 支付协议
+│           └── aiDecision.js         AI 决策面板 (LLM推理/回测/跨协议)
 │
 └── tests/                             Python 测试套件 (147 个测试)
     ├── test_config.py                 安全默认值和结构验证
@@ -568,7 +660,8 @@ python -m pytest tests/ -v  # 147 个测试全部通过
 ### 运行演示
 
 ```bash
-python3 demo.py
+python3 demo.py              # 基础认知循环演示
+python3 scripts/e2e_demo.py  # 端到端完整生命周期演示 (含 LLM 推理)
 ```
 
 ### 持续运行 Agent 服务
