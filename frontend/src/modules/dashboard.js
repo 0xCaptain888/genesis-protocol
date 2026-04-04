@@ -6,7 +6,9 @@ import { loadStrategies } from './strategy.js';
 import { loadDecisions } from './journal.js';
 import { loadNFTs } from './nft.js';
 
-const rpcProvider = new ethers.JsonRpcProvider(CFG.mainRpc);
+// Use /rpc proxy to avoid CORS issues with direct RPC calls
+const rpcUrl = (typeof window !== 'undefined' && window.location) ? window.location.origin + '/rpc' : CFG.mainRpc;
+const rpcProvider = new ethers.JsonRpcProvider(rpcUrl);
 const rpcAssembler = new ethers.Contract(CFG.assembler, ASSEMBLER_ABI, rpcProvider);
 const rpcNft = new ethers.Contract(CFG.nft, NFT_ABI, rpcProvider);
 
