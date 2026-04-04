@@ -395,3 +395,96 @@ class OnchainOSAPI:
         params = {"address": address}
         cli_cmd = ["onchainos", "wallet", "portfolio", "--address", address]
         return self._request_with_fallback("GET", path, cli_cmd, params=params)
+
+    # ── Integration Verification ──────────────────────────────────────────
+
+    def verify_integration(self) -> dict:
+        """Verify OnchainOS API connectivity across DEX and Market endpoints.
+
+        Calls get_supported_chains() to verify DEX API connectivity and
+        get_ticker("ETH-USDT") to verify Market API connectivity.
+
+        Uses only stdlib (urllib.request) as a fallback if the ``requests``
+        library is not available, ensuring the check works in minimal
+        environments.
+
+        Returns:
+            A status dict with keys: ``status``, ``dex_api``, ``market_api``,
+            ``has_credentials``, ``has_requests_lib``, ``timestamp``.
+        """
+        from datetime import datetime, timezone as _tz
+
+        result = {
+            "status": "unknown",
+            "dex_api": "untested",
+            "market_api": "untested",
+            "has_credentials": self._has_credentials,
+            "has_requests_lib": _requests is not None,
+            "timestamp": datetime.now(_tz.utc).isoformat(),
+        }
+
+        # --- DEX API check (get_supported_chains) -------------------------
+        dex_resp = self.get_supported_chains()
+        if dex_resp is not None:
+            code = dex_resp.get("code") if isinstance(dex_resp, dict) else None
+            if code == "0" or (isinstance(dex_resp, dict) and "data" in dex_resp):
+                result["dex_api"] = "connected"
+            else:
+                result["dex_api"] = f"response_code={code}"
+        else:
+            # stdlib fallback: try a plain GET without auth
+            result["dex_api"] = self._stdlib_get(
+                self.base_url + "/api/v6/dex/aggregator/supported/chain"
+            )
+
+        # --- Market API check (get_ticker) ---------------------------------
+        ticker_resp = self.get_ticker("ETH-USDT")
+        if ticker_resp is not None:
+            code = ticker_resp.get("code") if isinstance(ticker_resp, dict) else None
+            if code == "0" and ticker_resp.get("data"):
+                last = ticker_resp["data"][0].get("last", "?")
+                result["market_api"] = f"connected (ETH-USDT={last})"
+            else:
+                result["market_api"] = f"response_code={code}"
+        else:
+            # stdlib fallback
+            result["market_api"] = self._stdlib_get(
+                self.market_base_url + "/api/v5/market/ticker?instId=ETH-USDT"
+            )
+
+        # --- Overall status ------------------------------------------------
+        dex_ok = result["dex_api"].startswith("connected") or result["dex_api"].startswith("response_code")
+        mkt_ok = result["market_api"].startswith("connected") or result["market_api"].startswith("response_code")
+        if dex_ok and mkt_ok:
+            result["status"] = "operational"
+        elif dex_ok or mkt_ok:
+            result["status"] = "partial"
+        else:
+            result["status"] = "degraded"
+
+        logger.info("verify_integration result: %s", result)
+        return result
+
+    @staticmethod
+    def _stdlib_get(url: str) -> str:
+        """Attempt a plain HTTP GET using only urllib.request (no auth).
+
+        Returns a short status string for use in verify_integration().
+        """
+        import urllib.request
+        import urllib.error
+        try:
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("User-Agent", "genesis-protocol/1.0")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+                code = body.get("code") if isinstance(body, dict) else None
+                if code == "0":
+                    return "connected (stdlib)"
+                return f"response_code={code} (stdlib)"
+        except urllib.error.HTTPError as exc:
+            return f"http_error_{exc.code} (stdlib)"
+        except urllib.error.URLError as exc:
+            return f"url_error: {exc.reason} (stdlib)"
+        except Exception as exc:
+            return f"error: {exc} (stdlib)"

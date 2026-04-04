@@ -33,6 +33,7 @@ from .strategy_manager import StrategyManager
 from .decision_journal import DecisionJournal
 from .hook_assembler import HookAssembler
 from .nft_minter import NFTMinter
+from .onchainos_api import OnchainOSAPI
 from .payment_handler import PaymentHandler
 
 logging.basicConfig(
@@ -40,6 +41,28 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger("genesis.cli")
+
+
+def _startup_verify():
+    """Run OnchainOS integration verification on startup and log results."""
+    try:
+        api = OnchainOSAPI()
+        result = api.verify_integration()
+        status = result.get("status", "unknown")
+        dex = result.get("dex_api", "?")
+        market = result.get("market_api", "?")
+        logger.info(
+            "OnchainOS integration check: status=%s | DEX=%s | Market=%s",
+            status, dex, market,
+        )
+        if status == "degraded":
+            logger.warning(
+                "OnchainOS APIs are degraded. REST calls will fall back to CLI."
+            )
+        return result
+    except Exception as exc:
+        logger.error("OnchainOS startup verification failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
 
 
 def cmd_start():
@@ -261,6 +284,9 @@ def cmd_x402_pay(product=None, token=None, payer=None):
 
 
 def main():
+    # Run integration verification on startup
+    _startup_verify()
+
     if len(sys.argv) < 2:
         print(__doc__)
         return

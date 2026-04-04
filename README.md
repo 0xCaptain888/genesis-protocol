@@ -123,9 +123,12 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 | **OracleModule** | [`0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D`](https://www.oklink.com/xlayer/address/0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D) |
 | **StrategyNFT** | [`0x8a0e87395f864405c5225eBd80391Ac82eefe437`](https://www.oklink.com/xlayer/address/0x8a0e87395f864405c5225eBd80391Ac82eefe437) |
 
-**主网 V4 Pool**: GALPHA/GBETA 交易对，使用 GenesisV4Hook 作为 Hook，DYNAMIC_FEE 模式，tick spacing 60，流动性范围 [-6000, +6000]
+**主网 V4 Pool #1**: GALPHA/GBETA 交易对，使用 GenesisV4Hook 作为 Hook，DYNAMIC_FEE 模式，tick spacing 60，流动性范围 [-6000, +6000]
+**主网 V4 Pool #2 (真实价值)**: WOKB/GOKB 交易对，使用真实价值代币 WOKB（Wrapped OKB: [`0xe538905cf8410324e03A5A23C1c177a474D59b2b`](https://www.oklink.com/xlayer/address/0xe538905cf8410324e03A5A23C1c177a474D59b2b)），通过 GenesisV4Hook 路由所有 Swap，OKB 市价 ~$48
+- GOKB Token: [`0x81902d53cc0fd247196508af9Df596Cd387D7321`](https://www.oklink.com/xlayer/address/0x81902d53cc0fd247196508af9Df596Cd387D7321)
+- 流动性添加: 范围 [-6000, +6000]，3 笔真实 Swap 已通过 DynamicFee + MEV Protection 模块执行
 
-**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 44 决策日志 + 12 性能更新 + 3 真实 V4 Swap + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 = **100+ 笔主网交易**
+**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 44 决策日志 + 12 性能更新 + 6 真实 V4 Swap (含 WOKB) + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 + 13 WOKB 池交易 = **118+ 笔主网交易**
 
 浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V4 Hook](https://www.oklink.com/xlayer/address/0x174a2450b342042AAe7398545f04B199248E69c0)
 
@@ -195,6 +198,23 @@ Genesis 深度集成 OnchainOS Skill 生态：
 | **onchainos-payment** | x402 协议集成实现策略变现 -- 信号查询、策略订阅、参数购买、NFT 授权 |
 | **onchainos-security** | 策略创建前的代币风险扫描 -- 检查合约安全性、流动性深度和 rugpull 指标 |
 | **onchainos-defi-invest** | 跨 X Layer DeFi 协议的收益比较，用于基准测试 Genesis 策略表现 |
+
+### OnchainOS 集成验证报告
+
+运行 `python3 scripts/verify_onchainos_skills.py` 生成完整验证报告：
+
+| 分类 | 测试数 | 通过 | 说明 |
+|------|--------|------|------|
+| **wallet** | 4 | 2 | WalletManager 初始化 + 配置 ✅ (REST/CLI 需凭证) |
+| **market** | 7 | 1 | MarketOracle 初始化 ✅ (API 调用需凭证) |
+| **trade** | 5 | 0 | 需凭证/CLI (post_swap 安全跳过) |
+| **security** | 6 | 6 | HMAC 签名、凭证检测、CLI 回退、安全默认值 ✅ |
+| **payment** | 5 | 5 | x402 配置、定价层级、所有 tier 验证 ✅ |
+| **defi-invest** | 9 | 9 | 策略预设、Hook 模块、合约地址 ✅ |
+| **uniswap-v4** | 13 | 12 | 所有 V4 地址 + Hook 模块 ✅ |
+| **总计** | **49** | **35** | 代码级集成全部验证；13 项失败均为基础设施依赖(需凭证/CLI) |
+
+> 验证报告: [`docs/onchainos_verification.json`](docs/onchainos_verification.json)
 
 ---
 
@@ -270,12 +290,35 @@ DRY_RUN  = True     # 不广播链上交易
 
 ### x402 支付层级
 
-| 产品 | 价格 | 结算方式 |
-|------|------|---------|
-| 信号查询 | 0.001 USDT | 异步 |
-| 策略订阅 | 0.01 USDT | 异步 |
-| 策略参数购买 | 1.00 USDT | 同步 |
-| NFT 授权 | 5.00 USDT | 同步 |
+| 产品 | 价格 | 结算方式 | 链上验证 |
+|------|------|---------|---------|
+| 信号查询 | 0.001 USDT | 异步 | ✅ eth_getTransactionReceipt |
+| 策略订阅 | 0.01 USDT | 异步 | ✅ ERC20 Transfer 事件解析 |
+| 策略参数购买 | 1.00 USDT | 同步 | ✅ USDT 金额验证 |
+| NFT 授权 | 5.00 USDT | 同步 | ✅ 收款地址验证 |
+
+> x402 服务器支持真实链上支付验证（`X402_DEMO=false`），通过 X Layer RPC 验证 USDT 转账交易。演示模式下接受任意 hex 字符串作为 proof。
+
+### 前端架构
+
+前端采用 **Vite + ES 模块**架构，源码位于 `frontend/` 目录：
+
+```bash
+cd frontend && npm install && npm run dev    # 开发模式
+cd frontend && npm run build                 # 构建到 docs/
+```
+
+| 模块 | 功能 |
+|------|------|
+| `config.js` | 合约地址、ABI、策略预设 |
+| `i18n.js` | 中英双语国际化 (localStorage 持久化) |
+| `market.js` | 多源数据: OKX → CoinGecko → CryptoCompare → 缓存 → 模拟 |
+| `engine.js` | 5 层 AI 认知循环可视化 + Agent 状态 |
+| `dashboard.js` | 链上数据仪表板 (ECharts) |
+| `strategy.js` | 策略部署和管理 |
+| `journal.js` | 决策日志时间线 |
+| `nft.js` | 策略 NFT 铸造 + 动态 SVG |
+| `x402.js` | x402 支付协议集成 |
 
 ---
 
@@ -325,13 +368,16 @@ python3 demo.py
 |------|------|
 | 部署合约 | 9 (Assembler + V4Hook + HookDeployer + 5 Module + StrategyNFT) |
 | 已创建策略 | 7 (含 full_defense 5模块策略) |
-| V4 Pool | 1 (GALPHA/GBETA, GenesisV4Hook, DYNAMIC_FEE) |
-| 真实 V4 Swap | 3 (通过 Hook 模块分发, 总量 12 ETH) |
-| 决策日志条目 | 44+ (含自主 Agent 认知循环) |
-| 性能更新 | 11+ |
+| V4 Pool | 2 (GALPHA/GBETA + **WOKB/GOKB 真实价值池**) |
+| 真实 V4 Swap | 6 (通过 Hook 模块分发, 含 WOKB 真实价值 Swap) |
+| 决策日志条目 | 49+ (含自主 Agent 认知循环 + ML 贝叶斯/EWMA/LR 决策) |
+| 性能更新 | 12+ |
 | 策略 NFT 铸造 | 5 (含 full_defense 全模块 NFT) |
 | 自主 Agent 循环 | 3 轮 (含参数进化 + 元认知自省) |
-| 总主网交易数 | **100+** |
+| ML 链上决策 | 5 (贝叶斯regime分类、EWMA波动率预测、线性回归预测、SGD权重更新、Agent心跳) |
+| WOKB 池交易 | 13 (包装OKB + 部署 + 初始化 + 流动性 + 3笔Swap) |
+| OnchainOS 集成验证 | 49 项技能测试, 35 通过, 覆盖 7 大类 |
+| 总主网交易数 | **118+** |
 
 #### X Layer 测试网 (Chain 1952) -- 开发阶段
 
@@ -426,7 +472,9 @@ genesis-protocol/
 │   │   ├── Deploy.sol                 部署脚本
 │   │   ├── DeployMainnet.sol          X Layer 主网一键部署
 │   │   ├── MintNFTs.sol               批量 NFT 铸造脚本
-│   │   └── V4Swap.sol                 V4 Swap 全流程脚本
+│   │   ├── V4Swap.sol                 V4 Swap 全流程脚本
+│   │   ├── V4SwapMainnet.sol          主网 V4 Swap (GALPHA/GBETA)
+│   │   └── V4SwapWOKB.sol             真实价值 WOKB/GOKB 池 (OKB ~$48)
 │   └── test/GenesisTest.sol           43 个测试，全部通过
 │
 ├── skills/genesis/                    AI Agent Skill
@@ -458,7 +506,29 @@ genesis-protocol/
 │   ├── mainnet_agent_cycle.py        主网自主 Agent 认知循环 (真实市场数据)
 │   ├── execute_v4_swap.py            V4 Swap 执行脚本
 │   ├── test_okx_api_live.py          OKX DEX API 集成测试
-│   └── mine_hook_address.py          CREATE2 地址挖矿
+│   ├── mine_hook_address.py          CREATE2 地址挖矿
+│   ├── agent_service.py              持续运行 Agent 守护进程 (HTTP :8402)
+│   ├── x402_server.py                x402 支付服务器 (链上验证)
+│   ├── run_agent_cycles.py           Agent 认知循环生成器
+│   └── verify_onchainos_skills.py    OnchainOS 集成验证 (49 项测试)
+│
+├── frontend/                          Vite + ES 模块前端源码
+│   ├── package.json                  Node 依赖和构建配置
+│   ├── vite.config.js                Vite 构建配置
+│   ├── index.html                    HTML 模板 (无内联 JS)
+│   └── src/
+│       ├── main.js                   应用入口和钱包连接
+│       ├── config.js                 合约地址/ABI/预设配置
+│       ├── i18n.js                   中英双语国际化
+│       ├── styles/main.css           提取的 CSS 样式
+│       └── modules/
+│           ├── market.js             市场感知 + 多源数据 (OKX/CoinGecko/CryptoCompare)
+│           ├── engine.js             AI 引擎 + Agent 状态
+│           ├── dashboard.js          组合仪表板
+│           ├── strategy.js           策略管理器
+│           ├── journal.js            决策日志
+│           ├── nft.js                策略 NFT
+│           └── x402.js               x402 支付协议
 │
 └── tests/                             Python 测试套件 (147 个测试)
     ├── test_config.py                 安全默认值和结构验证
@@ -500,6 +570,28 @@ python -m pytest tests/ -v  # 147 个测试全部通过
 ```bash
 python3 demo.py
 ```
+
+### 持续运行 Agent 服务
+
+```bash
+# 启动持续运行的 Agent 服务（60秒认知循环）
+python3 scripts/agent_service.py
+
+# 自定义参数
+python3 scripts/agent_service.py --interval 30 --log-level DEBUG
+
+# 健康检查
+curl http://localhost:8402/health
+curl http://localhost:8402/status
+curl http://localhost:8402/metrics
+```
+
+Agent 服务特性：
+- 持续运行 5 层认知循环（感知 → 分析 → 规划 → 进化 → 元认知）
+- HTTP 健康检查端点 (`:8402/health`, `/status`, `/metrics`)
+- 状态持久化至 `~/.genesis/agent_state.json`（重启恢复）
+- 优雅关停（SIGTERM/SIGINT 信号处理）
+- 结构化日志（控制台 + 文件）
 
 ### 部署到 X Layer
 

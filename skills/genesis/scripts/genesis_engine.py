@@ -3,6 +3,7 @@ Layers: Perception -> Analysis -> Planning -> Evolution -> Meta-Cognition.
 Only stdlib imports. All decisions logged to DecisionJournal.
 """
 import logging
+import math
 import time
 import json
 import os
@@ -14,6 +15,174 @@ from .decision_journal import DecisionJournal
 from .strategy_manager import StrategyManager
 
 logger = logging.getLogger(__name__)
+
+
+class StatisticalModel:
+    """Lightweight statistical ML model using only stdlib.
+    Implements online learning with exponential moving averages,
+    linear regression for trend prediction, and Bayesian confidence updating.
+    """
+
+    def __init__(self):
+        self._price_history: list = []  # [(timestamp, price)]
+        self._vol_history: list = []    # [(timestamp, volatility)]
+        self._regime_transitions: list = []  # [(from_regime, to_regime, timestamp)]
+        self._action_outcomes: list = []  # [(action, confidence, outcome_score)]
+        self._ema_fast = 0.0
+        self._ema_slow = 0.0
+        self._momentum_score = 0.0
+        self._bayesian_prior = {"calm": 0.33, "volatile": 0.33, "trending": 0.34}
+
+    def update_price(self, price: float, timestamp: float):
+        """Feed a new price observation into the model."""
+        self._price_history.append((timestamp, price))
+        if len(self._price_history) > 500:
+            self._price_history = self._price_history[-500:]
+        # Update EMAs (alpha_fast=0.1, alpha_slow=0.03)
+        if self._ema_fast == 0:
+            self._ema_fast = price
+            self._ema_slow = price
+        else:
+            self._ema_fast = 0.1 * price + 0.9 * self._ema_fast
+            self._ema_slow = 0.03 * price + 0.97 * self._ema_slow
+        # Momentum = EMA crossover signal
+        self._momentum_score = (self._ema_fast - self._ema_slow) / self._ema_slow if self._ema_slow > 0 else 0
+
+    def update_volatility(self, vol: float, timestamp: float):
+        """Feed a new volatility observation."""
+        self._vol_history.append((timestamp, vol))
+        if len(self._vol_history) > 200:
+            self._vol_history = self._vol_history[-200:]
+
+    def linear_regression_predict(self, horizon: int = 5) -> dict:
+        """Simple OLS linear regression on recent prices to predict direction.
+        Returns slope, r_squared, predicted_change_pct.
+        """
+        prices = [p for _, p in self._price_history[-30:]]
+        n = len(prices)
+        if n < 5:
+            return {"slope": 0, "r_squared": 0, "predicted_change_pct": 0, "n": n}
+        x_mean = (n - 1) / 2
+        y_mean = sum(prices) / n
+        ss_xy = sum((i - x_mean) * (p - y_mean) for i, p in enumerate(prices))
+        ss_xx = sum((i - x_mean) ** 2 for i in range(n))
+        ss_yy = sum((p - y_mean) ** 2 for p in prices)
+        slope = ss_xy / ss_xx if ss_xx > 0 else 0
+        r_squared = (ss_xy ** 2) / (ss_xx * ss_yy) if ss_xx > 0 and ss_yy > 0 else 0
+        predicted = prices[-1] + slope * horizon
+        change_pct = (predicted - prices[-1]) / prices[-1] * 100 if prices[-1] > 0 else 0
+        return {
+            "slope": round(slope, 6), "r_squared": round(r_squared, 4),
+            "predicted_change_pct": round(change_pct, 4), "n": n,
+            "direction": "up" if slope > 0 else "down" if slope < 0 else "flat",
+        }
+
+    def rolling_volatility_forecast(self) -> dict:
+        """EWMA volatility forecast (like RiskMetrics/GARCH-lite).
+        Uses exponentially weighted variance of returns.
+        """
+        prices = [p for _, p in self._price_history[-50:]]
+        if len(prices) < 10:
+            return {"forecast_vol": 0, "current_vol": 0, "vol_trend": "unknown"}
+        returns = [(prices[i] - prices[i-1]) / prices[i-1] for i in range(1, len(prices))]
+        # EWMA variance with lambda=0.94 (RiskMetrics standard)
+        lam = 0.94
+        var_ewma = returns[0] ** 2
+        for r in returns[1:]:
+            var_ewma = lam * var_ewma + (1 - lam) * r ** 2
+        forecast_vol = var_ewma ** 0.5 * 100  # annualize-ish
+        # Simple current vol
+        mean_r = sum(returns) / len(returns)
+        current_vol = (sum((r - mean_r) ** 2 for r in returns) / len(returns)) ** 0.5 * 100
+        vol_trend = "increasing" if forecast_vol > current_vol * 1.05 else "decreasing" if forecast_vol < current_vol * 0.95 else "stable"
+        return {
+            "forecast_vol": round(forecast_vol, 4),
+            "current_vol": round(current_vol, 4),
+            "vol_trend": vol_trend,
+            "ewma_lambda": lam,
+        }
+
+    def bayesian_regime_update(self, observed_vol: float, observed_momentum: float) -> dict:
+        """Bayesian regime classification with prior updating.
+        P(regime|data) ∝ P(data|regime) * P(regime)
+        """
+        def gaussian_likelihood(x, mu, sigma):
+            return math.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * (2 * math.pi) ** 0.5)
+
+        # Regime parameters: (vol_mean, vol_std, momentum_mean, momentum_std)
+        regime_params = {
+            "calm": (0.5, 0.3, 0.0, 0.005),
+            "volatile": (3.0, 1.5, 0.0, 0.02),
+            "trending": (1.5, 0.8, 0.01, 0.01),
+        }
+        posteriors = {}
+        for regime, (v_mu, v_sigma, m_mu, m_sigma) in regime_params.items():
+            vol_lik = gaussian_likelihood(observed_vol, v_mu, v_sigma)
+            mom_lik = gaussian_likelihood(abs(observed_momentum), abs(m_mu), m_sigma)
+            posteriors[regime] = vol_lik * mom_lik * self._bayesian_prior[regime]
+
+        total = sum(posteriors.values())
+        if total > 0:
+            posteriors = {k: v / total for k, v in posteriors.items()}
+        else:
+            posteriors = {"calm": 0.33, "volatile": 0.33, "trending": 0.34}
+
+        # Update priors with learning rate
+        alpha = 0.1
+        for regime in self._bayesian_prior:
+            self._bayesian_prior[regime] = (1 - alpha) * self._bayesian_prior[regime] + alpha * posteriors.get(regime, 0)
+
+        best_regime = max(posteriors, key=posteriors.get)
+        return {
+            "regime": best_regime,
+            "confidence": round(posteriors[best_regime], 4),
+            "posteriors": {k: round(v, 4) for k, v in posteriors.items()},
+            "priors": {k: round(v, 4) for k, v in self._bayesian_prior.items()},
+        }
+
+    def compute_confidence(self, data_quality: float, regime_clarity: float, trend_strength: float) -> float:
+        """ML-based confidence scoring using logistic regression weights.
+        Weights are learned from action_outcomes history.
+        """
+        # Default weights (updated by record_outcome)
+        w = self._get_learned_weights()
+        # Logistic function: 1/(1+exp(-(w0 + w1*x1 + w2*x2 + w3*x3)))
+        z = w[0] + w[1] * data_quality + w[2] * regime_clarity + w[3] * trend_strength
+        confidence = 1.0 / (1.0 + math.exp(-z))
+        return round(max(0.1, min(0.98, confidence)), 4)
+
+    def _get_learned_weights(self) -> list:
+        """Learn logistic regression weights from outcome history using gradient descent."""
+        if len(self._action_outcomes) < 5:
+            return [-0.5, 1.2, 0.8, 0.6]  # sensible defaults
+        # Mini gradient descent on recent outcomes
+        w = [-0.5, 1.2, 0.8, 0.6]
+        lr = 0.01
+        for _ in range(20):  # 20 iterations of SGD
+            for action, conf, outcome in self._action_outcomes[-20:]:
+                # Features: [1, data_quality_proxy, regime_proxy, trend_proxy]
+                x = [1.0, conf, conf * 0.8, conf * 0.5]
+                z = sum(wi * xi for wi, xi in zip(w, x))
+                pred = 1.0 / (1.0 + math.exp(-max(-10, min(10, z))))
+                error = outcome - pred
+                for j in range(4):
+                    w[j] += lr * error * x[j]
+        return w
+
+    def record_outcome(self, action: str, confidence: float, outcome_score: float):
+        """Record action outcome for online learning."""
+        self._action_outcomes.append((action, confidence, outcome_score))
+        if len(self._action_outcomes) > 200:
+            self._action_outcomes = self._action_outcomes[-200:]
+
+    def get_momentum_signal(self) -> dict:
+        """Get current momentum trading signal."""
+        return {
+            "ema_fast": round(self._ema_fast, 4),
+            "ema_slow": round(self._ema_slow, 4),
+            "momentum_score": round(self._momentum_score, 6),
+            "signal": "bullish" if self._momentum_score > 0.005 else "bearish" if self._momentum_score < -0.005 else "neutral",
+        }
 
 
 class GenesisEngine:
@@ -36,6 +205,7 @@ class GenesisEngine:
         }
         self._predictions: list = []   # [(ts, prediction_dict, outcome_dict|None)]
         self._prediction_accuracy = 0.5
+        self._ml_model = StatisticalModel()
         logger.info("GenesisEngine initialized (paused=%s, mode=%s)", config.PAUSED, config.MODE)
 
     # ═══════════════════════════════════════════════════════════════════
@@ -56,6 +226,10 @@ class GenesisEngine:
                 "strategy_health": health,
                 "strategy_summary": self.strategy_mgr.get_strategy_summary(),
             }
+            # Feed prices to ML model
+            for pair_key, price_data in prices.items():
+                if isinstance(price_data, (int, float)):
+                    self._ml_model.update_price(float(price_data), time.time())
             self._last_perception = time.time()
             logger.info("Perception: %d prices, %d strategies", len(prices), len(active))
         except Exception as exc:
@@ -82,9 +256,27 @@ class GenesisEngine:
                 if created and first_regime and created != first_regime:
                     mismatches.append({"strategy_id": strat["id"], "was": created, "now": first_regime})
             anomalies = self._detect_anomalies(regimes)
+            # ML-enhanced analysis
+            lr_forecast = self._ml_model.linear_regression_predict()
+            vol_forecast = self._ml_model.rolling_volatility_forecast()
+            momentum = self._ml_model.get_momentum_signal()
+
+            # Bayesian regime classification
+            avg_vol = 0
+            for r in regimes.values():
+                v = r.get("volatility", 0)
+                if v: avg_vol = v
+            bayesian_regime = self._ml_model.bayesian_regime_update(
+                avg_vol, momentum.get("momentum_score", 0)
+            )
+
             self._analysis_cache = {
                 "timestamp": int(time.time()), "regimes": regimes,
                 "mismatches": mismatches, "anomalies": anomalies,
+                "ml_forecast": lr_forecast,
+                "vol_forecast": vol_forecast,
+                "momentum": momentum,
+                "bayesian_regime": bayesian_regime,
             }
             self._last_analysis = time.time()
             logger.info("Analysis: %d regimes, %d mismatches, %d anomalies",
@@ -157,9 +349,16 @@ class GenesisEngine:
                         best_c, best_r = c, regime
                 if best_r and best_c > config.CONFIDENCE_THRESHOLD:
                     bias = self._preferences["new_strategy_bias"]
+                    # ML-enhanced confidence scoring
+                    ml_conf = self._ml_model.compute_confidence(
+                        data_quality=best_c,
+                        regime_clarity=abs(0.5 - self._analysis_cache.get("bayesian_regime", {}).get("confidence", 0.5)) * 2,
+                        trend_strength=abs(self._analysis_cache.get("ml_forecast", {}).get("predicted_change_pct", 0)) / 5
+                    )
+                    final_conf = min((best_c * 0.4 + ml_conf * 0.6) * (0.7 + bias * 0.3), 0.95)
                     actions.append({
                         "type": "create_strategy",
-                        "confidence": min(best_c * (0.7 + bias * 0.3), 0.95),
+                        "confidence": final_conf,
                         "reasoning": f"Regime {best_r['regime_name']} confidence {best_c:.2f}",
                         "params": {"regime": best_r["regime_name"], "market_data": best_r},
                     })
@@ -207,6 +406,12 @@ class GenesisEngine:
             # Low prediction accuracy -> reduce risk
             if self._prediction_accuracy < 0.4:
                 p["risk_tolerance"] = max(p["risk_tolerance"] - 0.1, 0.1)
+            # ML-driven adaptation: adjust based on forecast accuracy
+            vol_forecast = self._ml_model.rolling_volatility_forecast()
+            if vol_forecast.get("vol_trend") == "increasing":
+                p["risk_tolerance"] = max(p["risk_tolerance"] - 0.03, 0.1)
+            elif vol_forecast.get("vol_trend") == "decreasing":
+                p["risk_tolerance"] = min(p["risk_tolerance"] + 0.02, 0.9)
             self._last_evolution = time.time()
             self.journal.log_decision(0, "META_COGNITION",
                 f"Evolution: prefs {old} -> {p}",
@@ -240,6 +445,13 @@ class GenesisEngine:
                         correct += 1
             total = sum(1 for _, _, o in self._predictions if o is not None)
             self._prediction_accuracy = (correct / total) if total > 0 else 0.5
+            # Feed outcomes to ML model for online learning
+            for ts, pred, outcome in self._predictions:
+                if outcome is not None and outcome.get("executed"):
+                    score = 1.0 if pred.get("confidence", 0) > config.CONFIDENCE_THRESHOLD else 0.0
+                    self._ml_model.record_outcome(
+                        pred.get("action", ""), pred.get("confidence", 0), score
+                    )
             if len(self._predictions) > 100:
                 self._predictions = self._predictions[-100:]
             insights = {
@@ -347,4 +559,7 @@ class GenesisEngine:
             "last_perception": int(self._last_perception) or None,
             "last_analysis": int(self._last_analysis) or None,
             "last_evolution": int(self._last_evolution) or None,
+            "ml_momentum": self._ml_model.get_momentum_signal(),
+            "ml_forecast": self._ml_model.linear_regression_predict(),
+            "bayesian_regime": self._ml_model._bayesian_prior,
         }
