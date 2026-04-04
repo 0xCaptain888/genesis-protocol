@@ -15,3 +15,7 @@ strategies/
 # Environment
 .env
 *.key
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
