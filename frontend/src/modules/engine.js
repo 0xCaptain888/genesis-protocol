@@ -217,16 +217,51 @@ export async function runCognitiveCycle() {
     '<p class="text-xs text-gray-500">趋势: <span class="text-white">' + trend + '</span></p>' +
     '<p class="text-xs text-gray-500">质量评分: <span class="text-white">' + qualityScore + '/100</span></p>';
 
-  // DEX quote
-  const okbUsd = okbP.toFixed(2);
-  const slippage = (0.05 + 0.1 / Math.log10(okbP + 1)).toFixed(2);
-  document.getElementById('dex-quote').innerHTML =
-    '<p class="text-xs"><span class="text-gray-500">路由:</span> <span class="text-[var(--neon)]">Uniswap V4 (X Layer)</span></p>' +
-    '<p class="text-xs"><span class="text-gray-500">输入:</span> 1.0 OKB</p>' +
-    '<p class="text-xs"><span class="text-gray-500">预估输出:</span> <span class="text-white">' + okbUsd + ' USDT</span></p>' +
-    '<p class="text-xs"><span class="text-gray-500">预估滑点:</span> <span class="text-green-400">' + slippage + '%</span> <span class="text-gray-600">(= 0.05 + 0.1/log₁₀(price))</span></p>' +
-    '<p class="text-xs"><span class="text-gray-500">链:</span> X Layer (Chain 196)</p>' +
-    '<p class="text-xs"><span class="text-gray-500">Gas:</span> <span class="text-green-400">~$0.0005 (USDG 零费用)</span></p>';
+  // DEX quote – attempt real OKX DEX Aggregator quote, fallback to local calc
+  let dexQuoteHTML = '';
+  try {
+    const dexResp = await fetch(
+      '/okx-web3/api/v5/dex/aggregator/quote?chainId=196' +
+      '&fromTokenAddress=0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' +
+      '&toTokenAddress=0xe538905cf8410324e03A5A23C1c177a474D59b2b' +
+      '&amount=1000000000000000000',
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!dexResp.ok) throw new Error('HTTP ' + dexResp.status);
+    const dexJson = await dexResp.json();
+    if (dexJson.code !== '0' && dexJson.code !== 0) throw new Error('API code ' + dexJson.code);
+    const quoteData = dexJson.data && dexJson.data[0] ? dexJson.data[0] : null;
+    if (!quoteData) throw new Error('empty data');
+    const toAmount = quoteData.toTokenAmount;
+    const toDecimals = parseInt(quoteData.toToken?.decimals || '18', 10);
+    const toReadable = (parseFloat(toAmount) / Math.pow(10, toDecimals)).toFixed(6);
+    const estimatedPrice = quoteData.estimatedGas ? parseFloat(quoteData.estimatedGas) : null;
+    const routerDesc = (quoteData.routerResult?.dexRouterList || [])
+      .map(r => (r.router || r.dexProtocol?.[0]?.dexName || 'DEX').toString())
+      .join(' → ') || 'OKX DEX Aggregator';
+    dexQuoteHTML =
+      '<p class="text-xs"><span class="text-gray-500">数据源:</span> <span class="text-green-400">OKX DEX Aggregator (实时)</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">路由:</span> <span class="text-[var(--neon)]">' + routerDesc + ' (X Layer)</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">输入:</span> 1.0 OKB (native)</p>' +
+      '<p class="text-xs"><span class="text-gray-500">预估输出:</span> <span class="text-white">' + toReadable + ' WOKB</span></p>' +
+      (estimatedPrice ? '<p class="text-xs"><span class="text-gray-500">预估 Gas:</span> <span class="text-green-400">' + estimatedPrice + ' units</span></p>' : '') +
+      '<p class="text-xs"><span class="text-gray-500">链:</span> X Layer (Chain 196)</p>';
+    addLog('  DEX 报价: OKX DEX Aggregator 实时数据 ✓', 'text-green-400');
+  } catch (dexErr) {
+    // Fallback to local calculation
+    const okbUsd = okbP.toFixed(2);
+    const slippage = (0.05 + 0.1 / Math.log10(okbP + 1)).toFixed(2);
+    dexQuoteHTML =
+      '<p class="text-xs"><span class="text-gray-500">数据源:</span> <span class="text-yellow-400">本地计算 (估算)</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">路由:</span> <span class="text-[var(--neon)]">Uniswap V4 (X Layer)</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">输入:</span> 1.0 OKB</p>' +
+      '<p class="text-xs"><span class="text-gray-500">预估输出:</span> <span class="text-white">' + okbUsd + ' USDT</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">预估滑点:</span> <span class="text-green-400">' + slippage + '%</span> <span class="text-gray-600">(= 0.05 + 0.1/log₁₀(price))</span></p>' +
+      '<p class="text-xs"><span class="text-gray-500">链:</span> X Layer (Chain 196)</p>' +
+      '<p class="text-xs"><span class="text-gray-500">Gas:</span> <span class="text-green-400">~$0.0005 (USDG 零费用)</span></p>';
+    addLog('  DEX 报价: 本地估算 (OKX DEX API: ' + dexErr.message + ')', 'text-yellow-400');
+  }
+  document.getElementById('dex-quote').innerHTML = dexQuoteHTML;
 
   cycleRunning = false;
   btn.disabled = false;

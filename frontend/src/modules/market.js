@@ -212,14 +212,14 @@ export async function refreshMarketData() {
   const badge = document.getElementById('market-source-badge');
   if (badge) {
     if (source === 'Simulation') {
-      badge.className = 'data-src sim';
+      badge.className = 'data-src sim-red';
       badge.innerHTML = '模拟数据';
     } else if (source === 'CoinGecko API') {
-      badge.className = 'data-src live';
-      badge.innerHTML = '<span class="live-dot" style="width:6px;height:6px"></span> CoinGecko 实时数据';
+      badge.className = 'data-src sim';
+      badge.innerHTML = '<span class="live-dot" style="width:6px;height:6px;background:#eab308"></span> CoinGecko API (实时)';
     } else {
       badge.className = 'data-src live';
-      badge.innerHTML = '<span class="live-dot" style="width:6px;height:6px"></span> 实时数据';
+      badge.innerHTML = '<span class="live-dot" style="width:6px;height:6px"></span> OKX Market API (实时)';
     }
   }
 

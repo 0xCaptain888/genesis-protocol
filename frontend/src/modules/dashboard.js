@@ -237,6 +237,7 @@ export async function refreshDashboard() {
   const fb = FALLBACK_CHAIN_DATA;
 
   let sc = null, dc = null, sw = null, vol = null, dep = null, ns = null;
+  let blockNumber = null, gasPrice = null;
 
   // Sequential RPC calls to respect 4 req/sec rate limit
   try { sc = await rpcCall(() => rpcAssembler.strategyCount()); } catch (e) { /* use fallback */ }
@@ -250,6 +251,15 @@ export async function refreshDashboard() {
   try { dep = await rpcCall(() => rpcAssembler.assemblerDeployedAt()); } catch (e) { /* use fallback */ }
   await rpcDelay();
   try { ns = await rpcCall(() => rpcNft.totalSupply()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+
+  // Fetch X Layer network stats
+  try { blockNumber = await rpcCall(() => rpcProvider.getBlockNumber()); } catch (e) { blockNumber = null; }
+  await rpcDelay();
+  try {
+    const feeData = await rpcCall(() => rpcProvider.getFeeData());
+    gasPrice = feeData && feeData.gasPrice ? feeData.gasPrice : null;
+  } catch (e) { gasPrice = null; }
 
   // Use fallback values when RPC returns null
   const totalStrats = sc !== null ? Number(sc) : fb.strategyCount;
@@ -293,7 +303,13 @@ export async function refreshDashboard() {
     await loadNFTs(totalNfts, rpcNft);
   } catch (e) { /* nft fallback handled inside loadNFTs */ }
 
-  document.getElementById('refresh-status').textContent = '链上数据 | 上次: ' + new Date().toLocaleTimeString() + ' | 自动: 30秒';
+  // Build X Layer network stats status line
+  const blockStr = blockNumber !== null ? `X Layer #${blockNumber}` : 'X Layer';
+  const gasPriceGwei = gasPrice !== null ? parseFloat(ethers.formatUnits(gasPrice, 'gwei')).toFixed(2) : '--';
+  const gasStr = `Gas: ${gasPriceGwei} Gwei`;
+  const networkDot = blockNumber !== null ? '\u2705' : '\u26A0\uFE0F';
+  const timeStr = new Date().toLocaleTimeString();
+  document.getElementById('refresh-status').textContent = `${blockStr} | ${gasStr} | ${networkDot} 链上数据 | 上次: ${timeStr} | 自动: 30秒`;
 }
 
 export function getCharts() {
