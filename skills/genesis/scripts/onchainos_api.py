@@ -131,47 +131,74 @@ class OnchainOSAPI:
 
     def _request_with_fallback(self, method: str, path: str, cli_cmd: list[str],
                                 params: dict | None = None, body: dict | None = None) -> dict | None:
-        """Try REST API first; fall back to CLI subprocess on failure."""
+        """Try REST API first; fall back to CLI subprocess, then stdlib GET."""
         result = self._request(method, path, params=params, body=body)
         if result is not None:
             return result
         logger.info("REST unavailable for %s; falling back to CLI", path)
-        return self._cli_fallback(cli_cmd)
+        cli_result = self._cli_fallback(cli_cmd)
+        if cli_result is not None:
+            return cli_result
+        # Last resort: stdlib GET (works for public endpoints without auth)
+        if method.upper() == "GET":
+            request_path = path
+            if params:
+                qs = "&".join(f"{k}={v}" for k, v in params.items())
+                request_path = path + "?" + qs
+            url = self.base_url + request_path
+            logger.info("CLI unavailable for %s; falling back to stdlib GET", path)
+            return self._stdlib_get_json(url)
+        return None
 
     def _market_request(self, path: str, params: dict | None = None) -> dict | None:
-        """Execute an authenticated GET against the Market API (www.okx.com).
+        """Execute a GET against the Market API (www.okx.com).
 
-        Uses the same HMAC-SHA256 auth as the DEX API but against the
-        standard OKX Market API base URL. Works with account-level API keys.
+        OKX Market API endpoints (/api/v5/market/*, /api/v5/public/*) are
+        PUBLIC and do NOT require authentication. When credentials are
+        available, signed headers are included for higher rate limits.
+        Falls back to stdlib urllib when the ``requests`` library is absent.
         """
-        if not self._has_credentials:
-            logger.debug("No credentials; skipping market request %s", path)
-            return None
-        if _requests is None:
-            logger.error("requests library not installed")
-            return None
-
         request_path = path
         if params:
             qs = "&".join(f"{k}={v}" for k, v in params.items())
             request_path = path + "?" + qs
 
-        headers = self._sign("GET", request_path)
         url = self.market_base_url + request_path
 
+        # Try with requests library (with auth if available, without if not)
+        if _requests is not None:
+            try:
+                headers = self._sign("GET", request_path) if self._has_credentials else {
+                    "Content-Type": "application/json",
+                    "User-Agent": "genesis-protocol/1.0",
+                }
+                resp = _requests.get(url, headers=headers, timeout=self.timeout)
+                data = resp.json()
+                if data.get("code") == "0":
+                    logger.debug("Market GET %s -> OK (%d items)", path,
+                                 len(data.get("data", [])))
+                else:
+                    logger.debug("Market GET %s -> code=%s msg=%s",
+                                 path, data.get("code"), data.get("msg"))
+                return data
+            except Exception as exc:
+                logger.error("Market error for %s: %s", path, exc)
+
+        # Stdlib fallback (no auth — public endpoints only)
+        return self._stdlib_get_json(url)
+
+    def _stdlib_get_json(self, url: str) -> dict | None:
+        """Fetch JSON from a URL using only stdlib urllib.request (no auth)."""
+        import urllib.request
+        import urllib.error
         try:
-            resp = _requests.get(url, headers=headers, timeout=self.timeout)
-            data = resp.json()
-            if data.get("code") == "0":
-                logger.debug("Market GET %s -> OK (%d items)", path,
-                             len(data.get("data", [])))
-            else:
-                logger.error("Market GET %s -> code=%s msg=%s",
-                             path, data.get("code"), data.get("msg"))
-            return data
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("User-Agent", "genesis-protocol/1.0")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
         except Exception as exc:
-            logger.error("Market error for %s: %s", path, exc)
-        return None
+            logger.error("stdlib GET %s failed: %s", url, exc)
+            return None
 
     # ── Market Data Endpoints (Perception Layer) ───────────────────────────
 
