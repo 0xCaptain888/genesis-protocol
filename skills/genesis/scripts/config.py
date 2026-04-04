@@ -197,8 +197,8 @@ CONTRACTS = {
 # Populated after mainnet deployment via DeployMainnet.sol
 MAINNET_CONTRACTS = {
     "assembler": "0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78",
-    "v4_hook": "",
-    "hook_deployer": "",
+    "v4_hook": "0x174a2450b342042AAe7398545f04B199248E69c0",
+    "hook_deployer": "0xE07039Eab157B99e356c52DbC825aA3a0b4F55B9",
     "dynamic_fee_module": "0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed",
     "mev_protection_module": "0xA4f6ABd6F77928b06F075637ccBACA8f89e17386",
     "auto_rebalance_module": "0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee",

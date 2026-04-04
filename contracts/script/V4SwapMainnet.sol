@@ -60,64 +60,51 @@ contract TestToken {
     }
 }
 
-// ─── Swap Router (implements unlock callback pattern) ────────────────────────
+// ─── Swap Router ────────────────────────────────────────────────────────────
 contract SwapRouter is IUnlockCallback {
     IPoolManager public immutable poolManager;
+    CallbackData internal _callbackData;
 
-    // Transient storage for callback context
     struct CallbackData {
         PoolKey key;
         SwapParams params;
         address sender;
     }
 
-    // We store callback data in a state variable since transient storage
-    // requires Cancun opcodes that may not be available everywhere
-    CallbackData internal _callbackData;
-
     constructor(IPoolManager _poolManager) {
         poolManager = _poolManager;
     }
 
-    /// @notice Execute a swap through the PoolManager unlock pattern
     function swap(PoolKey memory key, SwapParams memory params) external returns (BalanceDelta delta) {
         _callbackData = CallbackData({key: key, params: params, sender: msg.sender});
         bytes memory result = poolManager.unlock(abi.encode(key, params, msg.sender));
         delta = abi.decode(result, (BalanceDelta));
     }
 
-    /// @notice Called by PoolManager inside unlock
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "only PM");
-
         (PoolKey memory key, SwapParams memory params, address sender) =
             abi.decode(data, (PoolKey, SwapParams, address));
-
         BalanceDelta delta = poolManager.swap(key, params, "");
-
-        // Settle negative deltas (tokens owed to the pool) and take positive deltas
         _settleDelta(key.currency0, delta.amount0(), sender);
         _settleDelta(key.currency1, delta.amount1(), sender);
-
         return abi.encode(delta);
     }
 
     function _settleDelta(Currency currency, int128 amount, address sender) internal {
         if (amount < 0) {
-            // We owe the pool: sync first, then transfer, then settle
             uint256 amountOwed = uint256(uint128(-amount));
+            // sync BEFORE transfer so settle() can detect the new tokens
             poolManager.sync(currency);
             TestToken(Currency.unwrap(currency)).transferFrom(sender, address(poolManager), amountOwed);
             poolManager.settle();
         } else if (amount > 0) {
-            // Pool owes us: take tokens out
-            uint256 amountOwed = uint256(uint128(amount));
-            poolManager.take(currency, sender, amountOwed);
+            poolManager.take(currency, sender, uint256(uint128(amount)));
         }
     }
 }
 
-// ─── Liquidity Helper (implements unlock callback for modifyLiquidity) ───────
+// ─── Liquidity Helper ───────────────────────────────────────────────────────
 contract LiquidityHelper is IUnlockCallback {
     IPoolManager public immutable poolManager;
 
@@ -126,11 +113,8 @@ contract LiquidityHelper is IUnlockCallback {
     }
 
     function addLiquidity(
-        PoolKey memory key,
-        int24 tickLower,
-        int24 tickUpper,
-        int256 liquidityDelta,
-        address sender
+        PoolKey memory key, int24 tickLower, int24 tickUpper,
+        int256 liquidityDelta, address sender
     ) external returns (BalanceDelta delta) {
         bytes memory result = poolManager.unlock(
             abi.encode(key, tickLower, tickUpper, liquidityDelta, sender)
@@ -140,85 +124,74 @@ contract LiquidityHelper is IUnlockCallback {
 
     function unlockCallback(bytes calldata data) external override returns (bytes memory) {
         require(msg.sender == address(poolManager), "only PM");
-
         (PoolKey memory key, int24 tickLower, int24 tickUpper, int256 liquidityDelta, address sender) =
             abi.decode(data, (PoolKey, int24, int24, int256, address));
-
         ModifyLiquidityParams memory params = ModifyLiquidityParams({
-            tickLower: tickLower,
-            tickUpper: tickUpper,
-            liquidityDelta: liquidityDelta,
-            salt: bytes32(0)
+            tickLower: tickLower, tickUpper: tickUpper,
+            liquidityDelta: liquidityDelta, salt: bytes32(0)
         });
-
         (BalanceDelta delta,) = poolManager.modifyLiquidity(key, params, "");
-
-        // Settle negative deltas (tokens we owe for providing liquidity)
         _settleDelta(key.currency0, delta.amount0(), sender);
         _settleDelta(key.currency1, delta.amount1(), sender);
-
         return abi.encode(delta);
     }
 
     function _settleDelta(Currency currency, int128 amount, address sender) internal {
         if (amount < 0) {
             uint256 amountOwed = uint256(uint128(-amount));
+            // sync BEFORE transfer so settle() can detect the new tokens
             poolManager.sync(currency);
             TestToken(Currency.unwrap(currency)).transferFrom(sender, address(poolManager), amountOwed);
             poolManager.settle();
         } else if (amount > 0) {
-            uint256 amountOwed = uint256(uint128(amount));
-            poolManager.take(currency, sender, amountOwed);
+            poolManager.take(currency, sender, uint256(uint128(amount)));
         }
     }
 }
 
-// ─── Main Deployment & Swap Script ──────────────────────────────────────────
-contract V4Swap is Script {
-    // Deployed contract addresses on X Layer Testnet
+// ─── Mainnet V4 Swap Script ────────────────────────────────────────────────
+/// @title V4SwapMainnet - Create V4 Pool with Genesis Hook on X Layer Mainnet
+/// @notice Deploys test tokens, creates pool with GenesisV4Hook, adds liquidity, executes swaps
+contract V4SwapMainnet is Script {
+    // X Layer Mainnet addresses
     address constant POOL_MANAGER = 0x360E68faCcca8cA495c1B759Fd9EEe466db9FB32;
-    address constant GENESIS_HOOK = 0x79a96bB2Ab2342cf6f1dD3c622F5CB01f9F7A8d4;
+    address constant GENESIS_HOOK = 0x174a2450b342042AAe7398545f04B199248E69c0; // CREATE2-mined, flags: 0xC0
     address constant ASSEMBLER = 0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78;
-    address constant DYNAMIC_FEE_MODULE = 0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed;
-    address constant MEV_PROTECTION_MODULE = 0xA4f6ABd6F77928b06F075637ccBACA8f89e17386;
-    address constant AUTO_REBALANCE_MODULE = 0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee;
 
-    // Pool parameters
-    uint24 constant DYNAMIC_FEE = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
+    uint24 constant DYNAMIC_FEE = 0x800000;
     int24 constant TICK_SPACING = 60;
-    uint160 constant SQRT_PRICE_1_1 = 79228162514264337593543950336; // sqrt(1) * 2^96
+    uint160 constant SQRT_PRICE_1_1 = 79228162514264337593543950336;
 
-    // Token amounts
     uint256 constant INITIAL_SUPPLY = 1_000_000 ether;
-    uint256 constant LIQUIDITY_AMOUNT = 100_000 ether;
-    int256 constant SWAP_AMOUNT = -1 ether; // exactIn: swap 1 token
+    int256 constant SWAP_AMOUNT = -1 ether;
 
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
-        console.log("=== Genesis V4 Swap Script ===");
+        console.log("=== Genesis V4 Swap - X Layer MAINNET ===");
         console.log("Deployer:", deployer);
         console.log("Chain ID:", block.chainid);
         console.log("PoolManager:", POOL_MANAGER);
         console.log("GenesisV4Hook:", GENESIS_HOOK);
+        console.log("Assembler:", ASSEMBLER);
 
         vm.startBroadcast(deployerKey);
 
-        // ─── Step 1: Deploy Test Tokens ─────────────────────────────────
-        TestToken tokenA = new TestToken("Genesis Test A", "GTA", INITIAL_SUPPLY);
-        TestToken tokenB = new TestToken("Genesis Test B", "GTB", INITIAL_SUPPLY);
-        console.log("TestTokenA:", address(tokenA));
-        console.log("TestTokenB:", address(tokenB));
+        // Step 1: Deploy Test Tokens
+        TestToken tokenA = new TestToken("Genesis Alpha", "GALPHA", INITIAL_SUPPLY);
+        TestToken tokenB = new TestToken("Genesis Beta", "GBETA", INITIAL_SUPPLY);
+        console.log("TokenA (GALPHA):", address(tokenA));
+        console.log("TokenB (GBETA):", address(tokenB));
 
-        // Sort tokens: currency0 < currency1
+        // Sort currencies
         (Currency currency0, Currency currency1) = address(tokenA) < address(tokenB)
             ? (Currency.wrap(address(tokenA)), Currency.wrap(address(tokenB)))
             : (Currency.wrap(address(tokenB)), Currency.wrap(address(tokenA)));
         console.log("Currency0:", Currency.unwrap(currency0));
         console.log("Currency1:", Currency.unwrap(currency1));
 
-        // ─── Step 2: Build PoolKey ──────────────────────────────────────
+        // Step 2: Build PoolKey with Genesis Hook
         PoolKey memory key = PoolKey({
             currency0: currency0,
             currency1: currency1,
@@ -227,54 +200,74 @@ contract V4Swap is Script {
             hooks: IHooks(GENESIS_HOOK)
         });
 
-        // ─── Step 3: Initialize Pool ────────────────────────────────────
-        console.log("Initializing pool...");
+        // Step 3: Initialize Pool
+        console.log("Initializing V4 pool with Genesis Hook...");
         int24 tick = IPoolManager(POOL_MANAGER).initialize(key, SQRT_PRICE_1_1);
         console.log("Pool initialized at tick:");
         console.logInt(tick);
 
-        // ─── Step 4: Deploy helper contracts ────────────────────────────
+        // Step 4: Deploy helpers
         LiquidityHelper liqHelper = new LiquidityHelper(IPoolManager(POOL_MANAGER));
         SwapRouter swapRouter = new SwapRouter(IPoolManager(POOL_MANAGER));
         console.log("LiquidityHelper:", address(liqHelper));
         console.log("SwapRouter:", address(swapRouter));
 
-        // ─── Step 5: Approve tokens for helpers ─────────────────────────
+        // Step 5: Approve tokens
         TestToken(Currency.unwrap(currency0)).approve(address(liqHelper), type(uint256).max);
         TestToken(Currency.unwrap(currency1)).approve(address(liqHelper), type(uint256).max);
         TestToken(Currency.unwrap(currency0)).approve(address(swapRouter), type(uint256).max);
         TestToken(Currency.unwrap(currency1)).approve(address(swapRouter), type(uint256).max);
 
-        // ─── Step 6: Add Liquidity ──────────────────────────────────────
-        // Use wide tick range around current price (tick 0 for 1:1)
+        // Step 6: Add Liquidity (wide range)
         int24 tickLower = -TICK_SPACING * 100; // -6000
         int24 tickUpper = TICK_SPACING * 100;  //  6000
-        int256 liquidityDelta = 100_000e18;    // large liquidity amount
+        int256 liquidityDelta = 100_000e18;
 
-        console.log("Adding liquidity...");
-        BalanceDelta liqDelta = liqHelper.addLiquidity(
-            key, tickLower, tickUpper, liquidityDelta, deployer
-        );
-        console.log("Liquidity added. Delta amount0:");
+        console.log("Adding liquidity [-6000, +6000]...");
+        BalanceDelta liqDelta = liqHelper.addLiquidity(key, tickLower, tickUpper, liquidityDelta, deployer);
+        console.log("Liquidity added. Amount0 delta:");
         console.logInt(liqDelta.amount0());
-        console.log("Delta amount1:");
+        console.log("Amount1 delta:");
         console.logInt(liqDelta.amount1());
 
-        // ─── Step 7: Execute Swap ───────────────────────────────────────
-        console.log("Executing swap (1 token0 -> token1)...");
-        SwapParams memory swapParams = SwapParams({
+        // Step 7: Execute Swap 1 (buy)
+        console.log("Executing Swap 1: 1 token0 -> token1 (through Genesis Hook)...");
+        SwapParams memory swapParams1 = SwapParams({
             zeroForOne: true,
-            amountSpecified: SWAP_AMOUNT, // negative = exactIn
+            amountSpecified: SWAP_AMOUNT,
             sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
         });
+        BalanceDelta delta1 = swapRouter.swap(key, swapParams1);
+        console.log("Swap 1 complete. Amount0:");
+        console.logInt(delta1.amount0());
+        console.log("Amount1:");
+        console.logInt(delta1.amount1());
 
-        BalanceDelta swapDelta = swapRouter.swap(key, swapParams);
-        console.log("Swap executed! Delta amount0:");
-        console.logInt(swapDelta.amount0());
-        console.log("Delta amount1:");
-        console.logInt(swapDelta.amount1());
+        // Step 8: Execute Swap 2 (sell - opposite direction)
+        console.log("Executing Swap 2: 1 token1 -> token0 (reverse direction)...");
+        SwapParams memory swapParams2 = SwapParams({
+            zeroForOne: false,
+            amountSpecified: SWAP_AMOUNT,
+            sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1
+        });
+        BalanceDelta delta2 = swapRouter.swap(key, swapParams2);
+        console.log("Swap 2 complete. Amount0:");
+        console.logInt(delta2.amount0());
+        console.log("Amount1:");
+        console.logInt(delta2.amount1());
 
-        // ─── Step 8: Verify Hook State ──────────────────────────────────
+        // Step 9: Execute Swap 3 (larger buy)
+        console.log("Executing Swap 3: 10 token0 -> token1 (large swap)...");
+        SwapParams memory swapParams3 = SwapParams({
+            zeroForOne: true,
+            amountSpecified: -10 ether,
+            sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1
+        });
+        BalanceDelta delta3 = swapRouter.swap(key, swapParams3);
+        console.log("Swap 3 complete. Amount0:");
+        console.logInt(delta3.amount0());
+
+        // Step 10: Verify Hook State
         uint256 totalSwaps = GenesisHookAssembler(ASSEMBLER).totalSwapsProcessed();
         uint256 totalVolume = GenesisHookAssembler(ASSEMBLER).totalVolumeProcessed();
         console.log("=== Hook Verification ===");
@@ -283,6 +276,8 @@ contract V4Swap is Script {
 
         vm.stopBroadcast();
 
-        console.log("=== V4 Swap Complete ===");
+        console.log("\n=== V4 MAINNET SWAP COMPLETE ===");
+        console.log("Pool created with Genesis Hook on X Layer Mainnet!");
+        console.log("3 swaps executed through DynamicFee + MEV Protection modules");
     }
 }

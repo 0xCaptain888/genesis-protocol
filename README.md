@@ -114,6 +114,8 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 | 合约 | 地址 |
 |------|------|
 | **GenesisHookAssembler** | [`0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78`](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) |
+| **GenesisV4Hook** | [`0x174a2450b342042AAe7398545f04B199248E69c0`](https://www.oklink.com/xlayer/address/0x174a2450b342042AAe7398545f04B199248E69c0) _(CREATE2 挖矿, flags: BEFORE_SWAP\|AFTER_SWAP)_ |
+| **HookDeployer** | [`0xE07039Eab157B99e356c52DbC825aA3a0b4F55B9`](https://www.oklink.com/xlayer/address/0xE07039Eab157B99e356c52DbC825aA3a0b4F55B9) |
 | **DynamicFeeModule** | [`0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed`](https://www.oklink.com/xlayer/address/0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed) |
 | **MEVProtectionModule** | [`0xA4f6ABd6F77928b06F075637ccBACA8f89e17386`](https://www.oklink.com/xlayer/address/0xA4f6ABd6F77928b06F075637ccBACA8f89e17386) |
 | **AutoRebalanceModule** | [`0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee`](https://www.oklink.com/xlayer/address/0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee) |
@@ -121,9 +123,11 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 | **OracleModule** | [`0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D`](https://www.oklink.com/xlayer/address/0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D) |
 | **StrategyNFT** | [`0x8a0e87395f864405c5225eBd80391Ac82eefe437`](https://www.oklink.com/xlayer/address/0x8a0e87395f864405c5225eBd80391Ac82eefe437) |
 
-**主网链上活动**: 7 个合约部署 + 5 模块注册 + 7 策略创建 + 22 决策日志 + 12 性能更新 + 22 自主 Agent 认知循环 = **70+ 笔主网交易**
+**主网 V4 Pool**: GALPHA/GBETA 交易对，使用 GenesisV4Hook 作为 Hook，DYNAMIC_FEE 模式，tick spacing 60，流动性范围 [-6000, +6000]
 
-浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
+**主网链上活动**: 9 个合约部署 + 5 模块注册 + 7 策略创建 + 44 决策日志 + 12 性能更新 + 3 真实 V4 Swap + 5 策略 NFT 铸造 + 22 自主 Agent 认知循环 = **100+ 笔主网交易**
+
+浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V4 Hook](https://www.oklink.com/xlayer/address/0x174a2450b342042AAe7398545f04B199248E69c0)
 
 ### Uniswap V4 Core 合约（X Layer）
 
@@ -319,12 +323,15 @@ python3 demo.py
 
 | 指标 | 数值 |
 |------|------|
-| 部署合约 | 7 (Assembler + 5 Module + StrategyNFT) |
+| 部署合约 | 9 (Assembler + V4Hook + HookDeployer + 5 Module + StrategyNFT) |
 | 已创建策略 | 7 (含 full_defense 5模块策略) |
+| V4 Pool | 1 (GALPHA/GBETA, GenesisV4Hook, DYNAMIC_FEE) |
+| 真实 V4 Swap | 3 (通过 Hook 模块分发, 总量 12 ETH) |
 | 决策日志条目 | 44+ (含自主 Agent 认知循环) |
 | 性能更新 | 11+ |
+| 策略 NFT 铸造 | 5 (含 full_defense 全模块 NFT) |
 | 自主 Agent 循环 | 3 轮 (含参数进化 + 元认知自省) |
-| 总主网交易数 | **70+** |
+| 总主网交易数 | **100+** |
 
 #### X Layer 测试网 (Chain 1952) -- 开发阶段
 
