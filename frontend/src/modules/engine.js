@@ -124,6 +124,33 @@ export async function runCognitiveCycle() {
   const feeAdj = parseFloat(vol) > 2 ? 'min_fee 0.10% -> 0.15%, max_fee 1.00% -> 1.50%' : 'min_fee 维持 0.05%, max_fee 维持 0.30%';
   addLog('  费率参数: ' + feeAdj);
   addLog('  再平衡阈值: soft_trigger ' + (parseFloat(vol) > 2 ? '85% -> 70% (提前触发)' : '85% -> 90% (延迟触发)'));
+
+  // LLM reasoning call (async, non-blocking for cycle flow)
+  let llmText = '';
+  try {
+    const llmPrompt = `Analyze the following live market data for Uniswap V4 Hook strategy optimization on X Layer:\n` +
+      `- ETH/USDT: $${ethP.toFixed(2)}, BTC/USDT: $${btcP.toFixed(0)}, OKB/USDT: $${okbP.toFixed(2)}\n` +
+      `- 24h Volatility: ${vol}%, Regime: ${regime.label}, Trend: ${trend}\n` +
+      `- Recommended preset: ${regime.preset}\n` +
+      `- Confidence: ${confidence}\n` +
+      `Explain why this strategy is optimal and what risks to monitor. Be specific and quantitative.`;
+    const llmResp = await fetch('/api/llm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: llmPrompt }),
+      signal: AbortSignal.timeout(15000),
+    }).then(r => r.json()).catch(() => null);
+    if (llmResp && llmResp.text) {
+      llmText = llmResp.text;
+      addLog('');
+      addLog('[AI 推理引擎] DeepSeek LLM 分析:', 'text-[var(--neon)]');
+      // Split into lines for better display
+      llmText.split(/\n+/).forEach(line => {
+        if (line.trim()) addLog('  ' + line.trim(), 'text-gray-300');
+      });
+      addLog('  (模型: ' + (llmResp.model || 'deepseek-chat') + ')', 'text-gray-600');
+    }
+  } catch (e) { /* LLM optional, don't block cycle */ }
   await sleep(400);
 
   // L5: Meta-cognition
@@ -146,7 +173,8 @@ export async function runCognitiveCycle() {
   addLog('  OnchainOS: 5 钱包体系 (master/strategy/income/reserve/rebalance)');
   if (aiDecision) {
     aiDecision.activateReasoningStep('rstep-confidence');
-    aiDecision.addLLMReasoning('[Meta-cognition] Decision quality: ' + qualityScore + '/100. Bias check: ' + (biasDetected ? 'WARNING - consecutive same-direction bias detected' : 'No significant bias') + '. System mode: PAPER/DRY_RUN. Final confidence: ' + confidence + '.', 'text-pink-400');
+    const llmLabel = llmText ? ' LLM: DeepSeek (live).' : ' LLM: template fallback.';
+    aiDecision.addLLMReasoning('[Meta-cognition] Decision quality: ' + qualityScore + '/100. Bias check: ' + (biasDetected ? 'WARNING - consecutive same-direction bias detected' : 'No significant bias') + '. System mode: PAPER/DRY_RUN. Final confidence: ' + confidence + '.' + llmLabel, 'text-pink-400');
     // Update full decision panel
     const regimeKey = parseFloat(vol) > 3 ? 'volatile' : parseFloat(vol) > 1 ? 'trending' : 'calm';
     const bayesianStr = _embeddedState?.ml_state?.bayesian_prior ?

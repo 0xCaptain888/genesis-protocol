@@ -1,6 +1,6 @@
 /**
  * Genesis Protocol — Production Server
- * Serves static frontend + proxies OKX API to avoid CORS.
+ * Serves static frontend + proxies OKX API + LLM reasoning endpoint.
  */
 import http from 'node:http';
 import https from 'node:https';
@@ -11,6 +11,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, 'dist');
 const PORT = process.env.PORT || 3000;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+
+const SYSTEM_PROMPT = `You are Genesis Protocol's AI reasoning engine — an autonomous DeFi agent operating Uniswap V4 Hook strategies on X Layer (Chain 196). You analyze market microstructure, volatility regimes, and MEV patterns to optimize liquidity provision. Provide concise, quantitative analysis in 2-3 sentences. Always reference specific numbers from the data provided.`;
 
 const MIME = {
   '.html': 'text/html',
@@ -52,6 +55,63 @@ function proxyTo(targetHost, pathRewrite, req, res) {
   proxyReq.end();
 }
 
+/** Call DeepSeek LLM for AI reasoning. */
+function handleLLM(req, res) {
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    if (!DEEPSEEK_API_KEY) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      return res.end(JSON.stringify({ error: 'no_api_key', text: '' }));
+    }
+    let parsed;
+    try { parsed = JSON.parse(body); } catch { parsed = {}; }
+    const userMsg = parsed.prompt || 'Analyze the current market conditions.';
+    const payload = JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userMsg },
+      ],
+      max_tokens: 300,
+      temperature: 0.7,
+    });
+    const opts = {
+      hostname: 'api.deepseek.com',
+      port: 443,
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: 20000,
+    };
+    const llmReq = https.request(opts, (llmRes) => {
+      let data = '';
+      llmRes.on('data', chunk => { data += chunk; });
+      llmRes.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          const text = j.choices?.[0]?.message?.content || '';
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ text, model: j.model || 'deepseek-chat' }));
+        } catch {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ error: 'parse_error', text: '' }));
+        }
+      });
+    });
+    llmReq.on('error', (e) => {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify({ error: e.message, text: '' }));
+    });
+    llmReq.write(payload);
+    llmReq.end();
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost`);
 
@@ -59,10 +119,15 @@ const server = http.createServer((req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
     });
     return res.end();
+  }
+
+  // LLM reasoning endpoint
+  if (url.pathname === '/api/llm' && req.method === 'POST') {
+    return handleLLM(req, res);
   }
 
   // API proxies
