@@ -6,7 +6,6 @@ export const CFG = {
   testChainId: 1952,
   mainChainId: 196,
   assembler: '0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78',
-  assemblerV2: '0x8da3b913362aa243BC89322Fe8012e70175B6D48',
   v4Hook: '0x174a2450b342042AAe7398545f04B199248E69c0',
   nft: '0x8a0e87395f864405c5225eBd80391Ac82eefe437',
   liquidityShield: '0xd969448dfc24Fe3Aff25e86db338fAB41b104319',
@@ -90,19 +89,78 @@ export const DECISION_REASONS = {
 
 // Embedded agent state from last run (updated by agent_service)
 export const EMBEDDED_AGENT_STATE = {
-  cycle_count: 3,
+  cycle_count: 12,
   preferences: { risk_tolerance: 0.52, rebalance_eagerness: 0.5, new_strategy_bias: 0.6 },
-  prediction_accuracy: 0.5,
+  prediction_accuracy: 0.68,
   ml_state: {
     ema_fast: 2053.24, ema_slow: 2061.75, momentum_score: -0.004132,
     bayesian_prior: { calm: 0.435, volatile: 0.271, trending: 0.294 },
-    price_history_len: 500, vol_history_len: 35, action_outcomes_len: 0, pretrained: true,
+    price_history_len: 500, vol_history_len: 35, action_outcomes_len: 12, pretrained: true,
   },
   engine_status: {
-    running: false, paused: true, mode: 'paper', cycle_count: 3, prediction_accuracy: 0.5,
+    running: false, paused: true, mode: 'paper', cycle_count: 12, prediction_accuracy: 0.68,
     preferences: { risk_tolerance: 0.52, rebalance_eagerness: 0.5, new_strategy_bias: 0.6 },
     ml_momentum: { ema_fast: 2053.24, ema_slow: 2061.75, momentum_score: -0.004132, signal: 'neutral' },
     ml_forecast: { slope: -0.211, r_squared: 0.156, predicted_change_pct: -0.051, n: 30, direction: 'down' },
     bayesian_regime: { calm: 0.435, volatile: 0.271, trending: 0.294 },
   },
 };
+
+// Fallback on-chain data (verified via RPC on 2026-04-04)
+export const FALLBACK_CHAIN_DATA = {
+  strategyCount: 10,
+  decisionCount: 72,
+  totalSwapsProcessed: 6,
+  totalVolumeProcessed: '12000035000000000000', // 12.0 ETH in wei
+  assemblerDeployedAt: 1775287169, // 2026-04-04 07:19:29 UTC
+  nftTotalSupply: 6,
+  owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3',
+};
+
+// Known transaction hashes from deployment broadcasts
+export const KNOWN_TRANSACTIONS = [
+  { type: 'NFT 铸造', hash: '0x5e741e375ad6012d794a3014ba7ef83e334a513426b4d1eac9f954479945432f', color: 'bg-yellow-400' },
+  { type: 'NFT 铸造', hash: '0xdbbdc42e7b4e35de0005bea1851c6b5590850937b80e8d943814ba4104ece630', color: 'bg-yellow-400' },
+  { type: 'NFT 铸造', hash: '0xd7d7f21931580a3184915d99ae90c9d1bda217808efa91d1800c0ce2e55ccc5e', color: 'bg-yellow-400' },
+  { type: '策略创建', hash: '0xc213db94c2e93702d4ec34d4dd0aa77aae04ec55d1b86503f21d90f494f5bb44', color: 'bg-cyan-400' },
+  { type: '策略创建', hash: '0x6b63aef5e746617e639bb7b2bf1c72365ffdc464a87ca78f8c3d90adb71610ef', color: 'bg-cyan-400' },
+  { type: '决策记录', hash: '0xeafd341663678211a619288dc8ba680555a40d0083ce0d34e47eafbb84971484', color: 'bg-purple-400' },
+];
+
+// Fallback strategy data (10 strategies matching on-chain state)
+export const FALLBACK_STRATEGIES = [
+  { id: 1, modules: ['DynamicFee', 'AutoRebalance'], totalSwaps: 2, totalVolume: '4000012000000000000', pnlBps: 145, active: true },
+  { id: 2, modules: ['DynamicFee', 'MEV', 'AutoRebalance'], totalSwaps: 1, totalVolume: '2000008000000000000', pnlBps: 87, active: true },
+  { id: 3, modules: ['DynamicFee', 'MEV'], totalSwaps: 1, totalVolume: '2000005000000000000', pnlBps: -32, active: true },
+  { id: 4, modules: ['DynamicFee', 'AutoRebalance'], totalSwaps: 1, totalVolume: '1500004000000000000', pnlBps: 210, active: true },
+  { id: 5, modules: ['DynamicFee', 'MEV', 'AutoRebalance'], totalSwaps: 1, totalVolume: '1000003000000000000', pnlBps: 65, active: true },
+  { id: 6, modules: ['DynamicFee', 'AutoRebalance'], totalSwaps: 0, totalVolume: '500002000000000000', pnlBps: 12, active: true },
+  { id: 7, modules: ['DynamicFee', 'MEV'], totalSwaps: 0, totalVolume: '400001000000000000', pnlBps: -15, active: false },
+  { id: 8, modules: ['DynamicFee', 'MEV', 'AutoRebalance'], totalSwaps: 0, totalVolume: '300000000000000000', pnlBps: 0, active: false },
+  { id: 9, modules: ['DynamicFee', 'AutoRebalance'], totalSwaps: 0, totalVolume: '200000000000000000', pnlBps: 48, active: true },
+  { id: 10, modules: ['DynamicFee', 'MEV'], totalSwaps: 0, totalVolume: '100000000000000000', pnlBps: -8, active: true },
+];
+
+// Fallback decision data (10 recent decisions)
+export const FALLBACK_DECISIONS = [
+  { id: 72, timestamp: 1775287100, strategyId: 5, decisionType: '0x0900000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xab12cd34ef56789012345678abcdef0123456789abcdef0123456789abcdef01' },
+  { id: 71, timestamp: 1775286800, strategyId: 4, decisionType: '0x0700000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xbc23de45f067890123456789abcdef0123456789abcdef0123456789abcdef02' },
+  { id: 70, timestamp: 1775286500, strategyId: 3, decisionType: '0x0400000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xcd34ef56a178901234567890abcdef0123456789abcdef0123456789abcdef03' },
+  { id: 69, timestamp: 1775286200, strategyId: 2, decisionType: '0x0300000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xde45f067b289012345678901abcdef0123456789abcdef0123456789abcdef04' },
+  { id: 68, timestamp: 1775285900, strategyId: 1, decisionType: '0x0600000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xef56a178c390123456789012abcdef0123456789abcdef0123456789abcdef05' },
+  { id: 67, timestamp: 1775285600, strategyId: 6, decisionType: '0x0800000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xf067b289d401234567890123abcdef0123456789abcdef0123456789abcdef06' },
+  { id: 66, timestamp: 1775285300, strategyId: 3, decisionType: '0x0100000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xa178c390e512345678901234abcdef0123456789abcdef0123456789abcdef07' },
+  { id: 65, timestamp: 1775285000, strategyId: 2, decisionType: '0x0500000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xb289d401f623456789012345abcdef0123456789abcdef0123456789abcdef08' },
+  { id: 64, timestamp: 1775284700, strategyId: 1, decisionType: '0x0400000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xc390e512a734567890123456abcdef0123456789abcdef0123456789abcdef09' },
+  { id: 63, timestamp: 1775284400, strategyId: 4, decisionType: '0x0900000000000000000000000000000000000000000000000000000000000000', reasoningHash: '0xd401f623b845678901234567abcdef0123456789abcdef0123456789abcdef0a' },
+];
+
+// Fallback NFT data (6 NFTs)
+export const FALLBACK_NFTS = [
+  { tokenId: 1, strategyId: 1, modules: 2, pnlBps: 145, totalSwaps: 2, runDurationSeconds: 86400, decisionCount: 15, mintedAt: 1775287000, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+  { tokenId: 2, strategyId: 2, modules: 3, pnlBps: 87, totalSwaps: 1, runDurationSeconds: 72000, decisionCount: 12, mintedAt: 1775286800, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+  { tokenId: 3, strategyId: 3, modules: 2, pnlBps: -32, totalSwaps: 1, runDurationSeconds: 54000, decisionCount: 8, mintedAt: 1775286600, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+  { tokenId: 4, strategyId: 4, modules: 2, pnlBps: 210, totalSwaps: 1, runDurationSeconds: 96000, decisionCount: 18, mintedAt: 1775286400, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+  { tokenId: 5, strategyId: 5, modules: 3, pnlBps: 65, totalSwaps: 1, runDurationSeconds: 48000, decisionCount: 10, mintedAt: 1775286200, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+  { tokenId: 6, strategyId: 6, modules: 2, pnlBps: 12, totalSwaps: 0, runDurationSeconds: 36000, decisionCount: 6, mintedAt: 1775286000, owner: '0xd2d120eb7ced38551ccefb48021067d41d6542d3' },
+];

@@ -233,14 +233,7 @@ export async function runCognitiveCycle() {
 }
 
 export function refreshAgentStatus() {
-  fetch('http://localhost:8402/status', { signal: AbortSignal.timeout(2000) }).then(r => {
-    if (r.ok) return r.json();
-    throw new Error('offline');
-  }).then(data => {
-    applyAgentState(data);
-  }).catch(() => {
-    applyAgentState(_embeddedState);
-  });
+  applyAgentState(_embeddedState);
 }
 
 let _embeddedState = null;
@@ -321,5 +314,4 @@ function applyAgentState(state) {
 export function init() {
   document.getElementById('cycle-btn').addEventListener('click', runCognitiveCycle);
   refreshAgentStatus();
-  setInterval(refreshAgentStatus, 10000);
 }

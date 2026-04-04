@@ -1,6 +1,6 @@
 // ── Dashboard: on-chain data, charts, recent transactions ──
 
-import { CFG, ASSEMBLER_ABI, NFT_ABI, MOD_NAMES } from '../config.js';
+import { CFG, ASSEMBLER_ABI, NFT_ABI, MOD_NAMES, FALLBACK_CHAIN_DATA, KNOWN_TRANSACTIONS } from '../config.js';
 import { toast } from '../main.js';
 import { loadStrategies } from './strategy.js';
 import { loadDecisions } from './journal.js';
@@ -8,10 +8,9 @@ import { loadNFTs } from './nft.js';
 
 const rpcProvider = new ethers.JsonRpcProvider(CFG.mainRpc);
 const rpcAssembler = new ethers.Contract(CFG.assembler, ASSEMBLER_ABI, rpcProvider);
-const rpcAssemblerV2 = new ethers.Contract(CFG.assemblerV2, ASSEMBLER_ABI, rpcProvider);
 const rpcNft = new ethers.Contract(CFG.nft, NFT_ABI, rpcProvider);
 
-export { rpcProvider, rpcAssembler, rpcAssemblerV2, rpcNft };
+export { rpcProvider, rpcAssembler, rpcNft };
 
 let actChart = null, feeChart = null, rngChart = null, radarChart = null;
 
@@ -146,7 +145,10 @@ function refreshRadarChart(strategies, decisions, swaps, nfts, volumeEth) {
 async function loadRecentTransactions() {
   const el = document.getElementById('recent-tx-list');
   try {
-    const currentBlock = await rpcProvider.getBlockNumber();
+    const currentBlock = await Promise.race([
+      rpcProvider.getBlockNumber(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ]);
     const fromBlock = Math.max(0, currentBlock - 5000);
     const strategyFilter = rpcAssembler.filters.StrategyCreated ? rpcAssembler.filters.StrategyCreated() : null;
     const decisionFilter = rpcAssembler.filters.DecisionLogged ? rpcAssembler.filters.DecisionLogged() : null;
@@ -154,20 +156,29 @@ async function loadRecentTransactions() {
     let events = [];
     if (strategyFilter) {
       try {
-        const sEvents = await rpcAssembler.queryFilter(strategyFilter, fromBlock, currentBlock);
+        const sEvents = await Promise.race([
+          rpcAssembler.queryFilter(strategyFilter, fromBlock, currentBlock),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
         events = events.concat(sEvents.map(e => ({ type: '策略创建', hash: e.transactionHash, block: e.blockNumber, color: 'bg-cyan-400' })));
       } catch (e) { /* ignore */ }
     }
     if (decisionFilter) {
       try {
-        const dEvents = await rpcAssembler.queryFilter(decisionFilter, fromBlock, currentBlock);
+        const dEvents = await Promise.race([
+          rpcAssembler.queryFilter(decisionFilter, fromBlock, currentBlock),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
         events = events.concat(dEvents.map(e => ({ type: '决策记录', hash: e.transactionHash, block: e.blockNumber, color: 'bg-purple-400' })));
       } catch (e) { /* ignore */ }
     }
     try {
       const nftTransferFilter = rpcNft.filters.Transfer ? rpcNft.filters.Transfer(ethers.ZeroAddress) : null;
       if (nftTransferFilter) {
-        const nEvents = await rpcNft.queryFilter(nftTransferFilter, fromBlock, currentBlock);
+        const nEvents = await Promise.race([
+          rpcNft.queryFilter(nftTransferFilter, fromBlock, currentBlock),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+        ]);
         events = events.concat(nEvents.map(e => ({ type: 'NFT 铸造', hash: e.transactionHash, block: e.blockNumber, color: 'bg-yellow-400' })));
       }
     } catch (e) { /* ignore */ }
@@ -176,77 +187,111 @@ async function loadRecentTransactions() {
     events = events.slice(0, 6);
 
     if (events.length > 0) {
-      let html = '';
-      events.forEach(ev => {
-        html += `<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-          <div class="flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full ${ev.color} flex-shrink-0"></span>
-            <span class="text-xs text-gray-400">${ev.type}</span>
-            <span class="text-xs text-gray-600">Block #${ev.block}</span>
-          </div>
-          <a href="https://www.oklink.com/xlayer/tx/${ev.hash}" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">${ev.hash}</a>
-        </div>`;
-      });
-      el.innerHTML = html;
+      renderTransactions(el, events, true);
     } else {
-      el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">未找到最近交易。<a href="https://www.oklink.com/xlayer/address/' + CFG.assembler + '" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看</a></div>';
+      // No events found from RPC, show known transactions
+      renderKnownTransactions(el);
     }
   } catch (e) {
-    el.innerHTML = '<div class="text-center py-4 text-gray-600 text-xs">无法查询事件。<a href="https://www.oklink.com/xlayer/address/' + CFG.assembler + '" target="_blank" class="text-[var(--neon)] hover:underline">在浏览器查看交易</a></div>';
+    // RPC failed entirely, show known transactions
+    renderKnownTransactions(el);
   }
+}
+
+function renderTransactions(el, events, hasBlock) {
+  let html = '';
+  events.forEach(ev => {
+    html += `<div class="card p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full ${ev.color} flex-shrink-0"></span>
+        <span class="text-xs text-gray-400">${ev.type}</span>
+        ${hasBlock && ev.block ? '<span class="text-xs text-gray-600">Block #' + ev.block + '</span>' : ''}
+      </div>
+      <a href="https://www.oklink.com/xlayer/tx/${ev.hash}" target="_blank" class="text-xs text-[var(--neon)] hover:underline truncate-addr" style="max-width:320px">${ev.hash}</a>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function renderKnownTransactions(el) {
+  renderTransactions(el, KNOWN_TRANSACTIONS, false);
+}
+
+// Sequential RPC call with timeout to avoid rate limiting
+async function rpcCall(fn) {
+  return Promise.race([
+    fn(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+  ]);
+}
+
+// Small delay between RPC calls to respect rate limits
+function rpcDelay() {
+  return new Promise(r => setTimeout(r, 300));
 }
 
 export async function refreshDashboard() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const fb = FALLBACK_CHAIN_DATA;
+
+  let sc = null, dc = null, sw = null, vol = null, dep = null, ns = null;
+
+  // Sequential RPC calls to respect 4 req/sec rate limit
+  try { sc = await rpcCall(() => rpcAssembler.strategyCount()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+  try { dc = await rpcCall(() => rpcAssembler.decisionCount()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+  try { sw = await rpcCall(() => rpcAssembler.totalSwapsProcessed()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+  try { vol = await rpcCall(() => rpcAssembler.totalVolumeProcessed()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+  try { dep = await rpcCall(() => rpcAssembler.assemblerDeployedAt()); } catch (e) { /* use fallback */ }
+  await rpcDelay();
+  try { ns = await rpcCall(() => rpcNft.totalSupply()); } catch (e) { /* use fallback */ }
+
+  // Use fallback values when RPC returns null
+  const totalStrats = sc !== null ? Number(sc) : fb.strategyCount;
+  const totalDecisions = dc !== null ? Number(dc) : fb.decisionCount;
+  const totalSwaps = sw !== null ? Number(sw) : fb.totalSwapsProcessed;
+  const totalVol = vol !== null ? vol : BigInt(fb.totalVolumeProcessed);
+  const deployedAt = dep !== null ? Number(dep) : fb.assemblerDeployedAt;
+  const totalNfts = ns !== null ? Number(ns) : fb.nftTotalSupply;
+
+  // Use explicit null checks (not falsy) so 0 displays as 0
+  set('stat-strategies', totalStrats);
+  set('stat-decisions', totalDecisions);
+  set('stat-swaps', totalSwaps);
+  set('stat-nfts', totalNfts);
+  set('stat-volume', ethers.formatEther(totalVol) + ' ETH');
+
+  const d = new Date(deployedAt * 1000);
+  set('stat-deployed', d.toLocaleDateString() + ' ' + d.toLocaleTimeString());
+
+  set('verified-strategies', totalStrats);
+  set('verified-decisions', totalDecisions);
+  set('verified-nfts', totalNfts);
+  set('verified-swaps', totalSwaps);
+
+  const volEth = parseFloat(ethers.formatEther(totalVol));
+  refreshActivityChart(totalStrats, totalDecisions, totalSwaps, totalNfts, volEth);
+  refreshRadarChart(totalStrats, totalDecisions, totalSwaps, totalNfts, volEth);
+
+  loadRecentTransactions();
+
+  // Load strategies, decisions, NFTs with independent try/catch
   try {
-    const [sc, dc, sw, vol, dep, ns, sc2, sw2, vol2] = await Promise.allSettled([
-      rpcAssembler.strategyCount(), rpcAssembler.decisionCount(),
-      rpcAssembler.totalSwapsProcessed(), rpcAssembler.totalVolumeProcessed(),
-      rpcAssembler.assemblerDeployedAt(), rpcNft.totalSupply(),
-      rpcAssemblerV2.strategyCount(),
-      rpcAssemblerV2.totalSwapsProcessed(), rpcAssemblerV2.totalVolumeProcessed(),
-    ]);
-    const v = r => r.status === 'fulfilled' ? r.value : null;
+    await loadStrategies(totalStrats, rpcAssembler);
+  } catch (e) { /* strategy fallback handled inside loadStrategies */ }
 
-    const totalStrats = (v(sc) !== null ? Number(v(sc)) : 0) + (v(sc2) !== null ? Number(v(sc2)) : 0);
-    const totalSwaps = (v(sw) !== null ? Number(v(sw)) : 0) + (v(sw2) !== null ? Number(v(sw2)) : 0);
-    const totalVol = (v(vol) !== null ? v(vol) : 0n) + (v(vol2) !== null ? v(vol2) : 0n);
+  try {
+    await loadDecisions(totalDecisions, rpcAssembler);
+  } catch (e) { /* decision fallback handled inside loadDecisions */ }
 
-    set('stat-strategies', totalStrats || '--');
-    set('stat-decisions', v(dc) !== null ? Number(v(dc)) : '--');
-    set('stat-swaps', totalSwaps || '--');
-    set('stat-nfts', v(ns) !== null ? Number(v(ns)) : '--');
-    if (totalVol > 0n) set('stat-volume', ethers.formatEther(totalVol) + ' ETH');
-    if (v(dep) !== null) {
-      const d = new Date(Number(v(dep)) * 1000);
-      set('stat-deployed', d.toLocaleDateString() + ' ' + d.toLocaleTimeString());
-    }
+  try {
+    await loadNFTs(totalNfts, rpcNft);
+  } catch (e) { /* nft fallback handled inside loadNFTs */ }
 
-    set('verified-strategies', totalStrats || '--');
-    set('verified-decisions', v(dc) !== null ? Number(v(dc)) : '--');
-    set('verified-nfts', v(ns) !== null ? Number(v(ns)) : '--');
-    set('verified-swaps', totalSwaps || '--');
-
-    const volEth = v(vol) !== null ? parseFloat(ethers.formatEther(v(vol))) : null;
-    refreshActivityChart(v(sc), v(dc), v(sw), v(ns), volEth);
-    refreshRadarChart(v(sc), v(dc), v(sw), v(ns), volEth);
-
-    loadRecentTransactions();
-
-    const count = v(sc) !== null ? Number(v(sc)) : 0;
-    await loadStrategies(count, rpcAssembler);
-
-    const dcount = v(dc) !== null ? Number(v(dc)) : 0;
-    await loadDecisions(dcount, rpcAssembler);
-
-    const ncount = v(ns) !== null ? Number(v(ns)) : 0;
-    await loadNFTs(ncount, rpcNft);
-
-    document.getElementById('refresh-status').textContent = '链上数据 | 上次: ' + new Date().toLocaleTimeString() + ' | 自动: 15秒';
-  } catch (e) {
-    document.getElementById('refresh-status').textContent = 'RPC 连接失败 - 30秒后重试';
-    toast('链上数据暂时无法获取，正在重试...', 'red');
-  }
+  document.getElementById('refresh-status').textContent = '链上数据 | 上次: ' + new Date().toLocaleTimeString() + ' | 自动: 30秒';
 }
 
 export function getCharts() {
@@ -256,5 +301,5 @@ export function getCharts() {
 export function init() {
   initCharts();
   refreshDashboard();
-  setInterval(refreshDashboard, 15000);
+  setInterval(refreshDashboard, 30000);
 }

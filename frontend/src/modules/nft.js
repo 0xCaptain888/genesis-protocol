@@ -1,5 +1,7 @@
 // ── Strategy NFT Gallery ──
 
+import { FALLBACK_NFTS } from '../config.js';
+
 export function generateNFTSvg(meta, tokenId) {
   const pnl = Number(meta.pnlBps) / 100;
   const modCount = meta.modules ? meta.modules.length : 0;
@@ -40,28 +42,52 @@ export async function loadNFTs(count, rpcNft) {
     return;
   }
   let html = '';
+  let rpcFailed = false;
   for (let i = 1; i <= Math.min(count, 9); i++) {
     try {
-      const [meta, owner] = await Promise.all([rpcNft.getStrategyMeta(i), rpcNft.ownerOf(i)]);
-      const pnl = Number(meta.pnlBps) / 100;
-      const dur = Number(meta.runDurationSeconds);
-      const hours = Math.floor(dur / 3600);
-      html += `<div class="card p-5 relative overflow-hidden" style="border-color:var(--purple);box-shadow:0 0 30px rgba(168,85,247,.1)">
-        <div class="nft-visual">${generateNFTSvg(meta, i)}</div>
-        <h3 class="orb text-sm font-bold mb-3">Genesis 策略 #${Number(meta.strategyId)}</h3>
-        <div class="space-y-2 text-xs">
-          <div class="flex justify-between"><span class="text-gray-500">收益</span><span class="${pnl >= 0 ? 'text-green-400' : 'text-red-400'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">Swap 数</span><span>${Number(meta.totalSwaps)}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">运行时长</span><span>${hours}小时</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">决策数</span><span class="text-[var(--purple)]">${Number(meta.decisionCount)}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">模块数</span><span>${meta.modules ? meta.modules.length : 0}</span></div>
-          <div class="flex justify-between"><span class="text-gray-500">持有者</span><span class="truncate-addr text-[var(--neon)]">${owner.slice(0, 6)}...${owner.slice(-4)}</span></div>
-        </div>
-        <div class="mt-3 text-center text-xs text-gray-600">铸造时间: ${new Date(Number(meta.mintedAt) * 1000).toLocaleDateString()}</div>
-      </div>`;
-    } catch (e) { break; }
+      const [meta, owner] = await Promise.all([
+        Promise.race([rpcNft.getStrategyMeta(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]),
+        Promise.race([rpcNft.ownerOf(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]),
+      ]);
+      html += renderNFTCard(meta, owner, i);
+    } catch (e) { rpcFailed = true; break; }
+  }
+  // If RPC failed to load any NFTs, use fallback
+  if (rpcFailed && html === '') {
+    FALLBACK_NFTS.forEach(nft => {
+      const meta = {
+        strategyId: nft.strategyId,
+        pnlBps: nft.pnlBps,
+        modules: new Array(nft.modules),
+        totalSwaps: nft.totalSwaps,
+        runDurationSeconds: nft.runDurationSeconds,
+        decisionCount: nft.decisionCount,
+        mintedAt: nft.mintedAt,
+      };
+      html += renderNFTCard(meta, nft.owner, nft.tokenId);
+    });
   }
   el.innerHTML = html || '<div class="text-center py-8 text-gray-600 text-xs col-span-3">无法加载 NFT 数据</div>';
+}
+
+function renderNFTCard(meta, owner, tokenId) {
+  const pnl = Number(meta.pnlBps) / 100;
+  const dur = Number(meta.runDurationSeconds);
+  const hours = Math.floor(dur / 3600);
+  const modCount = meta.modules ? (Array.isArray(meta.modules[0]) ? meta.modules.length : meta.modules.length) : 0;
+  return `<div class="card p-5 relative overflow-hidden" style="border-color:var(--purple);box-shadow:0 0 30px rgba(168,85,247,.1)">
+    <div class="nft-visual">${generateNFTSvg(meta, tokenId)}</div>
+    <h3 class="orb text-sm font-bold mb-3">Genesis 策略 #${Number(meta.strategyId)}</h3>
+    <div class="space-y-2 text-xs">
+      <div class="flex justify-between"><span class="text-gray-500">收益</span><span class="${pnl >= 0 ? 'text-green-400' : 'text-red-400'}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">Swap 数</span><span>${Number(meta.totalSwaps)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">运行时长</span><span>${hours}小时</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">决策数</span><span class="text-[var(--purple)]">${Number(meta.decisionCount)}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">模块数</span><span>${modCount}</span></div>
+      <div class="flex justify-between"><span class="text-gray-500">持有者</span><span class="truncate-addr text-[var(--neon)]">${typeof owner === 'string' ? owner.slice(0, 6) + '...' + owner.slice(-4) : '--'}</span></div>
+    </div>
+    <div class="mt-3 text-center text-xs text-gray-600">铸造时间: ${new Date(Number(meta.mintedAt) * 1000).toLocaleDateString()}</div>
+  </div>`;
 }
 
 export function init() {

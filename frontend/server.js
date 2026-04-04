@@ -141,6 +141,40 @@ const server = http.createServer((req, res) => {
     return proxyTo('api.coingecko.com', { from: /^\/cg-api/, to: '' }, req, res);
   }
 
+  // RPC proxy to X Layer
+  if (url.pathname === '/rpc' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      const payload = Buffer.from(body);
+      const opts = {
+        hostname: 'rpc.xlayer.tech',
+        port: 443,
+        path: '/',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': payload.length,
+        },
+        timeout: 15000,
+      };
+      const proxyReq = https.request(opts, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode, {
+          'Content-Type': proxyRes.headers['content-type'] || 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        });
+        proxyRes.pipe(res);
+      });
+      proxyReq.on('error', (e) => {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'rpc_proxy_error', detail: e.message }));
+      });
+      proxyReq.write(payload);
+      proxyReq.end();
+    });
+    return;
+  }
+
   // Static files
   let filePath = path.join(DIST, url.pathname === '/' ? 'index.html' : url.pathname);
   if (!fs.existsSync(filePath)) filePath = path.join(DIST, 'index.html'); // SPA fallback

