@@ -63,6 +63,7 @@ export async function loadNFTs(count, rpcNft) {
   }
   // If RPC failed or loaded nothing, use fallback
   if (html === '') {
+    html += '<div class="mb-3 col-span-3"><span class="data-src sim" style="font-size:10px">缓存数据 — RPC 不可达时显示最近链上快照</span></div>';
     FALLBACK_NFTS.forEach(nft => {
       const meta = {
         strategyId: nft.strategyId,

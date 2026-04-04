@@ -64,6 +64,7 @@ export function updateRecommendation(action, actionCn, rationale, whyDetails) {
 }
 
 // ── LLM Reasoning Display with Typing Effect ──
+let _typingIntervals = [];
 export function addLLMReasoning(text, color) {
   const display = document.getElementById('llm-reasoning-display');
   if (!display) return;
@@ -81,12 +82,17 @@ export function addLLMReasoning(text, color) {
       display.scrollTop = display.scrollHeight;
     } else {
       clearInterval(interval);
+      _typingIntervals = _typingIntervals.filter(x => x !== interval);
       p.classList.remove('typing-caret');
     }
   }, 12);
+  _typingIntervals.push(interval);
 }
 
 export function clearLLMReasoning() {
+  // Clear any running typing intervals
+  _typingIntervals.forEach(id => clearInterval(id));
+  _typingIntervals = [];
   const display = document.getElementById('llm-reasoning-display');
   if (display) display.innerHTML = '';
 }

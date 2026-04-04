@@ -31,7 +31,11 @@ export function updateX402Preview() {
 export async function executeX402Payment() {
   const svc = X402_SERVICES[document.getElementById('x402-service').value];
   const st = document.getElementById('x402-status');
+  const payBtn = document.getElementById('x402-pay-btn');
+  payBtn.disabled = true;
+  payBtn.classList.add('opacity-50', 'cursor-not-allowed');
 
+  try {
   // If wallet connected, do real on-chain payment
   if (getConnected()) {
     try {
@@ -76,6 +80,10 @@ export async function executeX402Payment() {
       '<span class="text-green-400">模拟完成: TX ' + fakeHash.slice(0, 20) + '...</span>' +
       '<br><span class="text-gray-500 text-xs">连接 OKX Wallet / MetaMask 可发送真实链上微支付</span>';
     toast('x402 模拟: ' + svc.okb + ' OKB → ' + svc.desc, 'green');
+  }
+  } finally {
+    payBtn.disabled = false;
+    payBtn.classList.remove('opacity-50', 'cursor-not-allowed');
   }
 }
 

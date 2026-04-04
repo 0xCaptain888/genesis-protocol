@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Genesis Protocol - AI 驱动的 Uniswap V4 Hook 策略引擎 | X Layer</title>
+<meta name="description" content="Genesis Protocol - AI-driven Uniswap V4 Hook strategy engine on X Layer. Intelligent DeFi strategies powered by a 5-layer cognitive AI agent.">
+<meta name="keywords" content="Genesis Protocol, Uniswap V4, Hook, AI, DeFi, X Layer, OKX, strategy, NFT, x402">
+<meta property="og:title" content="Genesis Protocol - AI Uniswap V4 Hook Strategy Engine">
+<meta property="og:description" content="AI-driven Uniswap V4 Hook strategy engine on X Layer. 5-layer cognitive AI agent for intelligent DeFi strategies.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://genesis-protocol.xyz">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
@@ -29,9 +36,29 @@
 <span id="network-badge" class="badge text-gray-500">未连接</span>
 <button id="lang-btn" class="text-xs text-gray-400 hover:text-[var(--neon)] border border-gray-700 rounded px-2 py-1">EN/中</button>
 <button id="connect-btn" class="neon-btn text-xs py-2 px-4">连接钱包</button>
+<button id="mobile-menu-btn" class="md:hidden text-gray-400 hover:text-[var(--neon)] p-1" aria-label="Toggle menu">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+</button>
+</div>
+</div>
+<!-- Mobile nav dropdown -->
+<div id="mobile-menu" class="hidden md:hidden bg-[#0a0e1a]/95 border-b border-gray-800/50 px-4 pb-3">
+<div class="flex flex-col gap-3 text-xs text-gray-400 pt-2">
+<a href="#market" class="hover:text-[var(--neon)]">市场感知</a>
+<a href="#ai-engine" class="hover:text-[var(--neon)]">AI 引擎</a>
+<a href="#ai-decision" class="hover:text-[var(--neon)]">AI 决策</a>
+<a href="#dashboard" class="hover:text-[var(--neon)]">仪表盘</a>
+<a href="#backtest" class="hover:text-[var(--neon)]">回测</a>
+<a href="#strategies" class="hover:text-[var(--neon)]">策略管理</a>
+<a href="#nfts" class="hover:text-[var(--neon)]">策略 NFT</a>
+<a href="#x402" class="hover:text-[var(--neon)]">x402</a>
 </div>
 </div>
 </nav>
+<script>
+document.getElementById('mobile-menu-btn').addEventListener('click',function(){document.getElementById('mobile-menu').classList.toggle('hidden')});
+document.querySelectorAll('#mobile-menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('mobile-menu').classList.add('hidden')})});
+</script>
 <!-- Hero -->
 <section class="relative min-h-[70vh] flex items-center justify-center grid-bg pt-14" id="hero">
 <div class="text-center px-4">

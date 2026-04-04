@@ -40,6 +40,7 @@ export async function loadDecisions(count, rpcAssembler) {
   }
   // If RPC failed or loaded nothing, use fallback
   if (html === '') {
+    html += '<div class="mb-3"><span class="data-src sim" style="font-size:10px">缓存数据 — RPC 不可达时显示最近链上快照</span></div>';
     FALLBACK_DECISIONS.forEach(d => {
       const dt = new Date(d.timestamp * 1000);
       const typeName = decodeDecisionType(d.decisionType);

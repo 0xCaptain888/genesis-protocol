@@ -14,6 +14,7 @@ export async function runCognitiveCycle() {
   btn.textContent = '运行中...';
   const log = document.getElementById('cycle-log');
   log.innerHTML = '';
+  try {
 
   const addLog = (msg, color) => {
     log.innerHTML += '<p class="' + (color || 'text-gray-400') + '">' + msg + '</p>';
@@ -150,6 +151,8 @@ export async function runCognitiveCycle() {
         if (line.trim()) addLog('  ' + line.trim(), 'text-gray-300');
       });
       addLog('  (模型: ' + (llmResp.model || 'deepseek-chat') + ')', 'text-gray-600');
+    } else if (!llmResp) {
+      addLog('  LLM 推理超时，使用模板分析', 'text-yellow-400');
     }
   } catch (e) { /* LLM optional, don't block cycle */ }
   await sleep(400);
@@ -263,9 +266,11 @@ export async function runCognitiveCycle() {
   }
   document.getElementById('dex-quote').innerHTML = dexQuoteHTML;
 
-  cycleRunning = false;
-  btn.disabled = false;
-  btn.textContent = '重新启动认知循环';
+  } finally {
+    cycleRunning = false;
+    btn.disabled = false;
+    btn.textContent = '重新启动认知循环';
+  }
 }
 
 export function refreshAgentStatus() {
