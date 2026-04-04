@@ -196,15 +196,15 @@ CONTRACTS = {
 # ─── Mainnet Contract Addresses (X Layer Mainnet - Chain 196) ──────────────
 # Populated after mainnet deployment via DeployMainnet.sol
 MAINNET_CONTRACTS = {
-    "assembler": "",
+    "assembler": "0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78",
     "v4_hook": "",
     "hook_deployer": "",
-    "dynamic_fee_module": "",
-    "mev_protection_module": "",
-    "auto_rebalance_module": "",
-    "liquidity_shield_module": "",
-    "oracle_module": "",
-    "strategy_nft": "",
+    "dynamic_fee_module": "0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed",
+    "mev_protection_module": "0xA4f6ABd6F77928b06F075637ccBACA8f89e17386",
+    "auto_rebalance_module": "0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee",
+    "liquidity_shield_module": "0xd969448dfc24Fe3Aff25e86db338fAB41b104319",
+    "oracle_module": "0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D",
+    "strategy_nft": "0x8a0e87395f864405c5225eBd80391Ac82eefe437",
 }
 
 # ─── Mainnet Chain Configuration ─────────────────────────────────────────

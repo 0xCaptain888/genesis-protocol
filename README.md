@@ -109,15 +109,21 @@ Genesis Protocol 是一个自主 AI Agent，管理 X Layer 上的 Uniswap V4 Hoo
 
 浏览器: [在 OKLink 查看](https://www.oklink.com/xlayer-test/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) | [V2 Assembler](https://www.oklink.com/xlayer-test/address/0x8da3b913362aa243BC89322Fe8012e70175B6D48)
 
-### X Layer 主网 (Chain 196) -- 部署就绪
+### X Layer 主网 (Chain 196) -- 已部署
 
-主网部署脚本已就绪，钱包获得 OKB Gas 后即可一键部署：
+| 合约 | 地址 |
+|------|------|
+| **GenesisHookAssembler** | [`0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78`](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78) |
+| **DynamicFeeModule** | [`0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed`](https://www.oklink.com/xlayer/address/0x277Ee5801D5d1e5126A76c986c96923AB5eC54Ed) |
+| **MEVProtectionModule** | [`0xA4f6ABd6F77928b06F075637ccBACA8f89e17386`](https://www.oklink.com/xlayer/address/0xA4f6ABd6F77928b06F075637ccBACA8f89e17386) |
+| **AutoRebalanceModule** | [`0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee`](https://www.oklink.com/xlayer/address/0xe04E22e78E1935b60e8827EB72CEc3b56299c8ee) |
+| **LiquidityShieldModule** | [`0xd969448dfc24Fe3Aff25e86db338fAB41b104319`](https://www.oklink.com/xlayer/address/0xd969448dfc24Fe3Aff25e86db338fAB41b104319) |
+| **OracleModule** | [`0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D`](https://www.oklink.com/xlayer/address/0xCFc867E2379Cbe097D934CB8e19e3F028B82Bd3D) |
+| **StrategyNFT** | [`0x8a0e87395f864405c5225eBd80391Ac82eefe437`](https://www.oklink.com/xlayer/address/0x8a0e87395f864405c5225eBd80391Ac82eefe437) |
 
-```bash
-cd contracts
-export PRIVATE_KEY=<your_key>
-forge script script/DeployMainnet.sol:DeployMainnet --rpc-url https://rpc.xlayer.tech --broadcast
-```
+**主网链上活动**: 7 个合约部署 + 5 模块注册 + 7 策略创建 + 22 决策日志 + 12 性能更新 + 22 自主 Agent 认知循环 = **70+ 笔主网交易**
+
+浏览器: [OKLink 主网查看](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)
 
 ### Uniswap V4 Core 合约（X Layer）
 
@@ -307,7 +313,20 @@ python3 demo.py
 - **第 5 层 元认知** -- 自我评估、偏差检测
 - **NFT 检查** -- 评估铸造资格并铸造策略 NFT
 
-### 链上活动（X Layer 测试网）
+### 链上活动
+
+#### X Layer 主网 (Chain 196) -- 真实交易
+
+| 指标 | 数值 |
+|------|------|
+| 部署合约 | 7 (Assembler + 5 Module + StrategyNFT) |
+| 已创建策略 | 7 (含 full_defense 5模块策略) |
+| 决策日志条目 | 44+ (含自主 Agent 认知循环) |
+| 性能更新 | 11+ |
+| 自主 Agent 循环 | 3 轮 (含参数进化 + 元认知自省) |
+| 总主网交易数 | **70+** |
+
+#### X Layer 测试网 (Chain 1952) -- 开发阶段
 
 | 指标 | 数值 |
 |------|------|
@@ -316,7 +335,7 @@ python3 demo.py
 | 处理 Swap | 31+ (含 V4 Hook 模块分发) |
 | 铸造策略 NFT | 5 |
 | 自主 Agent 循环 | 6（含参数进化） |
-| 总交易数 | 280+ |
+| 总测试网交易数 | 280+ |
 
 ---
 
@@ -426,8 +445,10 @@ genesis-protocol/
 │
 ├── scripts/
 │   ├── setup_agentic_wallet.py       代理钱包 TEE 注册脚本
-│   ├── generate_chain_activity.py    自动化链上活动生成器
-│   ├── autonomous_agent_cycle.py     真实自主认知循环 (3 轮)
+│   ├── generate_chain_activity.py    自动化链上活动生成器 (测试网)
+│   ├── autonomous_agent_cycle.py     真实自主认知循环 (测试网, 3 轮)
+│   ├── mainnet_activity.py           主网链上活动生成器 (Chain 196)
+│   ├── mainnet_agent_cycle.py        主网自主 Agent 认知循环 (真实市场数据)
 │   ├── execute_v4_swap.py            V4 Swap 执行脚本
 │   ├── test_okx_api_live.py          OKX DEX API 集成测试
 │   └── mine_hook_address.py          CREATE2 地址挖矿

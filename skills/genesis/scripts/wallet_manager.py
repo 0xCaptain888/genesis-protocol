@@ -28,10 +28,9 @@ logger = logging.getLogger(__name__)
 # OKX Web3 API base URL for wallet operations
 WEB3_BASE_URL = "https://web3.okx.com"
 
-# Default API credentials (overridden by env vars or constructor args)
-_DEFAULT_API_KEY = "6f04abd9-0f79-4b13-8b27-715b72e942f5"
-_DEFAULT_SECRET_KEY = "03475D89BF60D0A6222C7EE20505C2F4"
-_DEFAULT_PASSPHRASE = "Baofu888888@"
+# API credentials must be provided via environment variables:
+#   OK_ACCESS_KEY, OK_ACCESS_SECRET, OK_ACCESS_PASSPHRASE
+# No default credentials are stored in source code for security.
 
 
 class WalletManager:
@@ -61,22 +60,10 @@ class WalletManager:
         self.roles = config.WALLET_ROLES
         self.initialized: set[str] = set()
 
-        # API credentials: constructor > env > defaults
-        self.api_key = (
-            api_key
-            or os.environ.get("OK_ACCESS_KEY", "")
-            or _DEFAULT_API_KEY
-        )
-        self.api_secret = (
-            api_secret
-            or os.environ.get("OK_ACCESS_SECRET", "")
-            or _DEFAULT_SECRET_KEY
-        )
-        self.passphrase = (
-            passphrase
-            or os.environ.get("OK_ACCESS_PASSPHRASE", "")
-            or _DEFAULT_PASSPHRASE
-        )
+        # API credentials: constructor > env vars (no hardcoded defaults)
+        self.api_key = api_key or os.environ.get("OK_ACCESS_KEY", "")
+        self.api_secret = api_secret or os.environ.get("OK_ACCESS_SECRET", "")
+        self.passphrase = passphrase or os.environ.get("OK_ACCESS_PASSPHRASE", "")
         self.base_url = base_url.rstrip("/")
         self._has_credentials = bool(
             self.api_key and self.api_secret and self.passphrase
