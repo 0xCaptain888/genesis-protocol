@@ -43,17 +43,26 @@ export async function loadNFTs(count, rpcNft) {
   }
   let html = '';
   let rpcFailed = false;
-  for (let i = 1; i <= Math.min(count, 9); i++) {
-    try {
-      const [meta, owner] = await Promise.all([
-        Promise.race([rpcNft.getStrategyMeta(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]),
-        Promise.race([rpcNft.ownerOf(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]),
-      ]);
-      html += renderNFTCard(meta, owner, i);
-    } catch (e) { rpcFailed = true; break; }
+  // Probe: try the first RPC call; if it fails, skip straight to fallback
+  try {
+    await Promise.race([
+      rpcNft.getStrategyMeta(1),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+    ]);
+  } catch (e) { rpcFailed = true; }
+  if (!rpcFailed) {
+    for (let i = 1; i <= Math.min(count, 9); i++) {
+      try {
+        const [meta, owner] = await Promise.all([
+          Promise.race([rpcNft.getStrategyMeta(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))]),
+          Promise.race([rpcNft.ownerOf(i), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000))]),
+        ]);
+        html += renderNFTCard(meta, owner, i);
+      } catch (e) { break; }
+    }
   }
-  // If RPC failed to load any NFTs, use fallback
-  if (rpcFailed && html === '') {
+  // If RPC failed or loaded nothing, use fallback
+  if (html === '') {
     FALLBACK_NFTS.forEach(nft => {
       const meta = {
         strategyId: nft.strategyId,

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, 'dist');
 const PORT = process.env.PORT || 3000;
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || 'sk-76afd04c39dc4e50a8fdf78cc65f754e';
 
 const SYSTEM_PROMPT = `You are Genesis Protocol's AI reasoning engine — an autonomous DeFi agent operating Uniswap V4 Hook strategies on X Layer (Chain 196). You analyze market microstructure, volatility regimes, and MEV patterns to optimize liquidity provision. Provide concise, quantitative analysis in 2-3 sentences. Always reference specific numbers from the data provided.`;
 

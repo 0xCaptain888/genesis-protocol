@@ -74,6 +74,7 @@ async function connectWallet() {
     document.getElementById('deploy-btn').disabled = false;
     document.getElementById('deploy-btn').textContent = '部署策略';
     toast('钱包已连接: ' + addr.slice(0, 8) + '...', 'green');
+    window.dispatchEvent(new Event('wallet-connected'));
     w.on('chainChanged', () => location.reload());
     w.on('accountsChanged', () => location.reload());
   } catch (e) {

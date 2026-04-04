@@ -18,27 +18,36 @@ export async function loadStrategies(count, rpcAssembler) {
   }
   let html = '';
   let rpcFailed = false;
-  for (let i = 1; i <= Math.min(count, 20); i++) {
-    try {
-      const s = await Promise.race([
-        rpcAssembler.getStrategy(i),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
-      ]);
-      const mods = s.modules.map(a => MOD_NAMES[a.toLowerCase()] || a.slice(0, 8)).join(', ');
-      const pnl = Number(s.pnlBps) / 100;
-      const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
-      html += `<tr class="border-b border-gray-800/50 hover:bg-white/[.02]">
-        <td class="py-2 px-2 text-[var(--neon)]">#${s.id}</td>
-        <td class="py-2 px-2 text-xs">${mods}</td>
-        <td class="py-2 px-2 text-right">${Number(s.totalSwaps)}</td>
-        <td class="py-2 px-2 text-right">${ethers.formatEther(s.totalVolume).slice(0, 8)}</td>
-        <td class="py-2 px-2 text-right ${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</td>
-        <td class="py-2 px-2 text-center">${s.active ? '<span class="text-green-400">活跃</span>' : '<span class="text-gray-500">已停止</span>'}</td>
-      </tr>`;
-    } catch (e) { rpcFailed = true; break; }
+  // Probe: try the first RPC call; if it fails, skip straight to fallback
+  try {
+    await Promise.race([
+      rpcAssembler.getStrategy(1),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+    ]);
+  } catch (e) { rpcFailed = true; }
+  if (!rpcFailed) {
+    for (let i = 1; i <= Math.min(count, 20); i++) {
+      try {
+        const s = await Promise.race([
+          rpcAssembler.getStrategy(i),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+        ]);
+        const mods = s.modules.map(a => MOD_NAMES[a.toLowerCase()] || a.slice(0, 8)).join(', ');
+        const pnl = Number(s.pnlBps) / 100;
+        const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+        html += `<tr class="border-b border-gray-800/50 hover:bg-white/[.02]">
+          <td class="py-2 px-2 text-[var(--neon)]">#${s.id}</td>
+          <td class="py-2 px-2 text-xs">${mods}</td>
+          <td class="py-2 px-2 text-right">${Number(s.totalSwaps)}</td>
+          <td class="py-2 px-2 text-right">${ethers.formatEther(s.totalVolume).slice(0, 8)}</td>
+          <td class="py-2 px-2 text-right ${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}%</td>
+          <td class="py-2 px-2 text-center">${s.active ? '<span class="text-green-400">活跃</span>' : '<span class="text-gray-500">已停止</span>'}</td>
+        </tr>`;
+      } catch (e) { break; }
+    }
   }
-  // If RPC failed to load all strategies, use fallback data for remaining
-  if (rpcFailed && html === '') {
+  // If RPC failed or loaded nothing, use fallback data
+  if (html === '') {
     FALLBACK_STRATEGIES.forEach(s => {
       const mods = s.modules.join(', ');
       const pnl = s.pnlBps / 100;

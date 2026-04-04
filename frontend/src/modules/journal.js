@@ -15,22 +15,31 @@ export async function loadDecisions(count, rpcAssembler) {
   let html = '';
   let rpcFailed = false;
   const start = Math.max(1, count - 9);
-  for (let i = count; i >= start; i--) {
-    try {
-      const d = await Promise.race([
-        rpcAssembler.getDecision(i),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
-      ]);
-      const dt = new Date(Number(d.timestamp) * 1000);
-      const typeHex = d.decisionType;
-      const typeName = decodeDecisionType(typeHex);
-      const typeColor = DECISION_COLORS[typeName] || 'text-gray-400';
-      const reasoning = DECISION_REASONS[typeName] || '链上决策记录';
-      html += renderDecisionEntry(Number(d.strategyId), dt, typeName, typeColor, reasoning, d.reasoningHash);
-    } catch (e) { rpcFailed = true; break; }
+  // Probe: try the first RPC call; if it fails, skip straight to fallback
+  try {
+    await Promise.race([
+      rpcAssembler.getDecision(count),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+    ]);
+  } catch (e) { rpcFailed = true; }
+  if (!rpcFailed) {
+    for (let i = count; i >= start; i--) {
+      try {
+        const d = await Promise.race([
+          rpcAssembler.getDecision(i),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
+        ]);
+        const dt = new Date(Number(d.timestamp) * 1000);
+        const typeHex = d.decisionType;
+        const typeName = decodeDecisionType(typeHex);
+        const typeColor = DECISION_COLORS[typeName] || 'text-gray-400';
+        const reasoning = DECISION_REASONS[typeName] || '链上决策记录';
+        html += renderDecisionEntry(Number(d.strategyId), dt, typeName, typeColor, reasoning, d.reasoningHash);
+      } catch (e) { break; }
+    }
   }
-  // If RPC failed to load any decisions, use fallback
-  if (rpcFailed && html === '') {
+  // If RPC failed or loaded nothing, use fallback
+  if (html === '') {
     FALLBACK_DECISIONS.forEach(d => {
       const dt = new Date(d.timestamp * 1000);
       const typeName = decodeDecisionType(d.decisionType);
