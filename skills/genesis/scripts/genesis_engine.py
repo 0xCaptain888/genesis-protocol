@@ -15,6 +15,8 @@ from .wallet_manager import WalletManager
 from .decision_journal import DecisionJournal
 from .strategy_manager import StrategyManager
 from .llm_reasoning import LLMReasoner
+from .moltbook_identity import MoltbookIdentityManager
+from .data_integrity import DataIntegrityVerifier
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +212,13 @@ class GenesisEngine:
         self._ml_model = StatisticalModel()
         self._llm = LLMReasoner()
         self._llm_reasoning_cache: dict = {}  # Store latest LLM reasoning for UI
-        logger.info("GenesisEngine initialized (paused=%s, mode=%s, llm=%s)",
-                     config.PAUSED, config.MODE, self._llm.provider)
+        # V2 modules: identity and data integrity
+        self._identity_mgr = MoltbookIdentityManager()
+        self._integrity_verifier = DataIntegrityVerifier() if config.DATA_INTEGRITY_ENABLED else None
+        self._last_integrity_result: dict = {}
+        logger.info("GenesisEngine initialized (paused=%s, mode=%s, llm=%s, integrity=%s)",
+                     config.PAUSED, config.MODE, self._llm.provider,
+                     "enabled" if self._integrity_verifier else "disabled")
 
     # ═══════════════════════════════════════════════════════════════════
     # LAYER 1 — PERCEPTION: gather world state
@@ -525,6 +532,121 @@ class GenesisEngine:
             return {"error": str(exc)}
 
     # ═══════════════════════════════════════════════════════════════════
+    # V2 — DATA INTEGRITY: pre-check market data before cognitive cycle
+    # ═══════════════════════════════════════════════════════════════════
+
+    def run_integrity_check(self) -> dict:
+        """Run data integrity verification before each cognitive cycle.
+
+        Validates market data from multiple oracle sources via the
+        DataIntegrityVerifier. If the check recommends 'halt', the
+        cognitive cycle should skip analysis and planning.
+
+        Returns:
+            dict with integrity check result including recommended_action.
+        """
+        if self._integrity_verifier is None:
+            return {"enabled": False, "recommended_action": "proceed"}
+        try:
+            import asyncio
+            results = {}
+            for pair in config.ONCHAINOS_MARKET_PAIRS:
+                pair_str = f"{pair['base']}/{pair['quote']}"
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If already in an async context, schedule as a task
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            result = pool.submit(
+                                asyncio.run,
+                                self._integrity_verifier.verify_and_feed(pair_str),
+                            ).result(timeout=30)
+                    else:
+                        result = asyncio.run(
+                            self._integrity_verifier.verify_and_feed(pair_str)
+                        )
+                except RuntimeError:
+                    result = asyncio.run(
+                        self._integrity_verifier.verify_and_feed(pair_str)
+                    )
+                results[pair_str] = result
+
+            # Determine overall action: worst-case across all pairs
+            overall_action = "proceed"
+            for pair_str, result in results.items():
+                action = result.get("recommended_action", "proceed")
+                if action == "halt":
+                    overall_action = "halt"
+                    break
+                elif action == "caution" and overall_action == "proceed":
+                    overall_action = "caution"
+
+            self._last_integrity_result = {
+                "enabled": True,
+                "results": results,
+                "recommended_action": overall_action,
+                "timestamp": int(time.time()),
+            }
+            logger.info("Integrity check: action=%s (%d pairs checked)",
+                        overall_action, len(results))
+            return self._last_integrity_result
+
+        except Exception as exc:
+            logger.error("Integrity check failed: %s", exc)
+            self._last_integrity_result = {
+                "enabled": True, "error": str(exc),
+                "recommended_action": "caution",
+            }
+            return self._last_integrity_result
+
+    # ═══════════════════════════════════════════════════════════════════
+    # V2 — IDENTITY: attach Moltbook identity to Strategy NFTs
+    # ═══════════════════════════════════════════════════════════════════
+
+    def attach_identity_to_strategy(self, token_id: int) -> dict:
+        """Attach Moltbook identity attestation when minting Strategy NFTs.
+
+        Calls the MoltbookIdentityManager to attest the agent's identity
+        on-chain, linking the agent's reputation to the Strategy NFT.
+
+        Args:
+            token_id: The Strategy NFT token ID to attest.
+
+        Returns:
+            dict with attestation result including identity_hash and trust_score.
+        """
+        if not config.MOLTBOOK_IDENTITY_REQUIRED and not self._identity_mgr._has_credentials:
+            logger.debug("Moltbook identity not configured; skipping attestation")
+            return {"skipped": True, "reason": "identity not configured"}
+        try:
+            import asyncio
+            assembler = config.CONTRACTS.get("assembler", "")
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        result = pool.submit(
+                            asyncio.run,
+                            self._identity_mgr.attest_strategy_nft(token_id, assembler),
+                        ).result(timeout=30)
+                else:
+                    result = asyncio.run(
+                        self._identity_mgr.attest_strategy_nft(token_id, assembler)
+                    )
+            except RuntimeError:
+                result = asyncio.run(
+                    self._identity_mgr.attest_strategy_nft(token_id, assembler)
+                )
+            logger.info("Identity attestation for token_id=%d: %s", token_id,
+                        "ok" if not result.get("error") else result.get("error"))
+            return result
+        except Exception as exc:
+            logger.error("Identity attestation failed for token_id=%d: %s", token_id, exc)
+            return {"error": str(exc)}
+
+    # ═══════════════════════════════════════════════════════════════════
     # ORCHESTRATION: execute_plan, run_cycle, start/stop, status
     # ═══════════════════════════════════════════════════════════════════
     def execute_plan(self, actions: list) -> list:
@@ -583,10 +705,23 @@ class GenesisEngine:
         return results
 
     def run_cycle(self) -> dict:
-        """One full cognitive cycle: perceive -> analyze -> plan -> execute -> reflect."""
+        """One full cognitive cycle: integrity -> perceive -> analyze -> plan -> execute -> reflect."""
         self._cycle_count += 1
         t0 = time.time()
         logger.info("=== Cycle %d start ===", self._cycle_count)
+        # V2: Data integrity pre-check
+        integrity = self.run_integrity_check()
+        if integrity.get("recommended_action") == "halt":
+            logger.warning("Cycle %d halted by data integrity check", self._cycle_count)
+            self.journal.log_decision(0, "META_COGNITION",
+                f"Cycle {self._cycle_count} halted: data integrity check failed",
+                {"integrity": integrity})
+            elapsed = time.time() - t0
+            return {
+                "cycle": self._cycle_count, "elapsed_sec": round(elapsed, 3),
+                "actions_planned": 0, "actions_executed": 0,
+                "integrity_halt": True, "integrity": integrity,
+            }
         self.perceive()
         now = time.time()
         if now - self._last_analysis >= config.ANALYSIS_INTERVAL_SEC or self._cycle_count == 1:
@@ -603,6 +738,7 @@ class GenesisEngine:
             "actions_executed": sum(1 for r in results if r["status"] == "ok"),
             "evolution": evolution,
             "prediction_accuracy": reflection.get("prediction_accuracy"),
+            "integrity": integrity,
         }
 
     def start(self):
@@ -639,4 +775,6 @@ class GenesisEngine:
             "bayesian_regime": self._ml_model._bayesian_prior,
             "llm_provider": self._llm.provider,
             "llm_reasoning": self._llm_reasoning_cache,
+            "data_integrity": self._last_integrity_result,
+            "moltbook_identity": self._identity_mgr._has_credentials,
         }
