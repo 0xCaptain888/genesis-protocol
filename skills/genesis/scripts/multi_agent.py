@@ -15,7 +15,9 @@ sub-wallets for their operations.
 
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Optional
 
 from . import config
@@ -103,6 +105,57 @@ AGENT_CAPABILITIES = {
     "RebalanceAgent": ["check_rebalance", "execute_rebalance", "twap_step"],
 }
 
+# ── Upgrade #7: Agent Health Levels ─────────────────────────────────────
+
+
+class AgentHealth(Enum):
+    """Health status levels for graceful agent degradation."""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+    DISABLED = "disabled"
+
+
+# Thresholds for health transitions
+DEGRADED_THRESHOLD = 3   # consecutive failures to become DEGRADED
+FAILED_THRESHOLD = 5     # consecutive failures to become FAILED
+RECOVERY_THRESHOLD = 3   # consecutive successes to recover from DEGRADED to HEALTHY
+
+# Dependency graph: agent -> list of agents it depends on.
+# If a dependency is FAILED, the dependent falls back to safe defaults.
+AGENT_DEPENDENCIES: dict[str, list[str]] = {
+    "StrategyAgent": ["SentinelAgent"],
+    "RebalanceAgent": ["SentinelAgent", "StrategyAgent"],
+    "IncomeAgent": ["SentinelAgent"],
+    "SentinelAgent": [],
+}
+
+# ── Upgrade #8: Governance Rate-Limit Configuration ─────────────────────
+
+# Max operations per hour, per agent type
+AGENT_RATE_LIMITS: dict[str, int] = {
+    "SentinelAgent": 100,
+    "StrategyAgent": 50,
+    "IncomeAgent": 30,
+    "RebalanceAgent": 20,
+}
+
+# Per-agent max value for a single operation (in USD-equivalent units)
+AGENT_MAX_SINGLE_VALUE: dict[str, float] = {
+    "SentinelAgent": float("inf"),   # sentinel has no single-op value cap
+    "StrategyAgent": 100_000.0,
+    "IncomeAgent": 50_000.0,
+    "RebalanceAgent": 75_000.0,
+}
+
+# Per-agent max cumulative value per hour (in USD-equivalent units)
+AGENT_MAX_HOURLY_VALUE: dict[str, float] = {
+    "SentinelAgent": float("inf"),
+    "StrategyAgent": 500_000.0,
+    "IncomeAgent": 200_000.0,
+    "RebalanceAgent": 300_000.0,
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -117,6 +170,9 @@ class AgentState:
     action_count: int = 0
     error_count: int = 0
     last_error: str = ""
+    # Upgrade #7 – health tracking
+    consecutive_failures: int = 0
+    consecutive_successes: int = 0
 
 
 class MultiAgentOrchestrator:
@@ -147,6 +203,10 @@ class MultiAgentOrchestrator:
 
     def __init__(self):
         self.agents: dict[str, AgentState] = {}
+        # Upgrade #7 – per-agent health tracking
+        self._agent_health: dict[str, AgentHealth] = {}
+        # Upgrade #8 – rate limiter: {agent_name: [(timestamp, operation_type, value), ...]}
+        self._rate_limiter: dict[str, list[tuple[float, str, float]]] = defaultdict(list)
         self._init_agents()
         logger.info("MultiAgentOrchestrator initialized with %d agents", len(self.agents))
 
@@ -169,6 +229,7 @@ class MultiAgentOrchestrator:
                 wallet_role=role,
                 wallet_index=index,
             )
+            self._agent_health[name] = AgentHealth.HEALTHY
             logger.debug("Registered agent: %s (wallet=%s, idx=%d) - %s",
                          name, role, index, description)
 
@@ -183,6 +244,9 @@ class MultiAgentOrchestrator:
         - Fund isolation (strategy funds separate from rebalance funds)
         - Clear audit trail (each agent's actions are traceable)
         - Risk containment (a bug in RebalanceAgent can't drain StrategyAgent's funds)
+
+        Upgrade #7 adds graceful degradation based on agent health.
+        Upgrade #8 adds per-agent rate limiting and value checks.
         """
         agent = self.agents.get(agent_name)
         if not agent:
@@ -192,8 +256,60 @@ class MultiAgentOrchestrator:
             logger.info("System PAUSED - only SentinelAgent can operate")
             return {"status": "paused", "agent": agent_name}
 
-        logger.info("Dispatching %s to %s (wallet_idx=%d)",
-                     action, agent_name, agent.wallet_index)
+        # ── Upgrade #7: check agent health ──────────────────────────────
+        health = self._agent_health.get(agent_name, AgentHealth.HEALTHY)
+        if health == AgentHealth.DISABLED:
+            logger.info("Agent %s is DISABLED – skipping dispatch", agent_name)
+            return {"status": "disabled", "agent": agent_name}
+        if health == AgentHealth.FAILED:
+            # Check if any dependents need safe-default fallback
+            logger.warning("Agent %s is FAILED – attempting recovery probe", agent_name)
+            # Allow the call through so we can detect recovery (auto-recovery logic below)
+
+        # In DEGRADED mode, annotate params so handlers can reduce scope
+        degraded_mode = health == AgentHealth.DEGRADED
+        if degraded_mode:
+            params = {**params, "_degraded": True}
+            logger.info("Agent %s is DEGRADED – running with reduced scope", agent_name)
+
+        # ── Upgrade #8: rate-limit check ────────────────────────────────
+        operation_type = params.get("operation_type", action)
+        operation_value = float(params.get("operation_value", 0))
+        if not self.check_rate_limit(agent_name, operation_type):
+            logger.warning("Agent %s rate-limited for %s", agent_name, operation_type)
+            return {"status": "rate_limited", "agent": agent_name, "action": action}
+
+        # Value-per-operation cap
+        max_single = AGENT_MAX_SINGLE_VALUE.get(agent_name, float("inf"))
+        if operation_value > max_single:
+            logger.warning("Agent %s single-op value %.2f exceeds cap %.2f",
+                           agent_name, operation_value, max_single)
+            return {
+                "status": "rejected",
+                "agent": agent_name,
+                "reason": f"Single operation value {operation_value} exceeds limit {max_single}",
+            }
+
+        # Cumulative hourly value cap
+        max_hourly = AGENT_MAX_HOURLY_VALUE.get(agent_name, float("inf"))
+        now = time.time()
+        hourly_total = sum(
+            v for ts, _, v in self._rate_limiter.get(agent_name, [])
+            if now - ts < 3600
+        ) + operation_value
+        if hourly_total > max_hourly:
+            logger.warning("Agent %s cumulative hourly value %.2f would exceed cap %.2f",
+                           agent_name, hourly_total, max_hourly)
+            return {
+                "status": "rejected",
+                "agent": agent_name,
+                "reason": (f"Cumulative hourly value {hourly_total:.2f} "
+                           f"exceeds limit {max_hourly}"),
+            }
+
+        # ── Dispatch ────────────────────────────────────────────────────
+        logger.info("Dispatching %s to %s (wallet_idx=%d, health=%s)",
+                     action, agent_name, agent.wallet_index, health.value)
 
         agent.status = "executing"
         agent.last_action_time = time.time()
@@ -202,13 +318,44 @@ class MultiAgentOrchestrator:
             result = self._execute_agent_action(agent, action, params)
             agent.action_count += 1
             agent.status = "idle"
+
+            # Record operation for rate limiter
+            self._rate_limiter[agent_name].append(
+                (time.time(), operation_type, operation_value)
+            )
+
+            # ── Upgrade #7: auto-recovery on success ────────────────────
+            agent.consecutive_failures = 0
+            agent.consecutive_successes += 1
+            if health == AgentHealth.FAILED and agent.consecutive_successes >= 1:
+                self._agent_health[agent_name] = AgentHealth.DEGRADED
+                agent.consecutive_successes = 0
+                logger.info("Agent %s recovered from FAILED -> DEGRADED", agent_name)
+            elif health == AgentHealth.DEGRADED and agent.consecutive_successes >= RECOVERY_THRESHOLD:
+                self._agent_health[agent_name] = AgentHealth.HEALTHY
+                logger.info("Agent %s recovered from DEGRADED -> HEALTHY", agent_name)
+
             return result
         except Exception as exc:
             agent.error_count += 1
             agent.last_error = str(exc)
             agent.status = "error"
             logger.error("Agent %s failed: %s", agent_name, exc)
-            return {"error": str(exc), "agent": agent_name}
+
+            # ── Upgrade #7: track consecutive failures & degrade ────────
+            agent.consecutive_successes = 0
+            agent.consecutive_failures += 1
+            if agent.consecutive_failures >= FAILED_THRESHOLD:
+                self._agent_health[agent_name] = AgentHealth.FAILED
+                logger.error("Agent %s marked FAILED after %d consecutive failures",
+                             agent_name, agent.consecutive_failures)
+            elif agent.consecutive_failures >= DEGRADED_THRESHOLD:
+                self._agent_health[agent_name] = AgentHealth.DEGRADED
+                logger.warning("Agent %s marked DEGRADED after %d consecutive failures",
+                               agent_name, agent.consecutive_failures)
+
+            return {"error": str(exc), "agent": agent_name,
+                    "health": self._agent_health.get(agent_name, AgentHealth.HEALTHY).value}
 
     def _execute_agent_action(self, agent: AgentState, action: str, params: dict) -> dict:
         """Execute a specific action for an agent.
@@ -291,14 +438,20 @@ class MultiAgentOrchestrator:
         }
 
     def _sentinel_approve_operation(self, agent: AgentState, params: dict) -> dict:
-        """Validate and approve high-value operations."""
+        """Validate and approve high-value operations.
+
+        Upgrade #8: also enforces per-agent rate limits and cumulative value caps.
+        """
         logger.info("[SentinelAgent] Evaluating operation approval: %s", params)
 
         position_size_pct = params.get("position_size_pct", 0)
         max_allowed = config.MAX_POSITION_SIZE_PCT
         operation_type = params.get("operation_type", "unknown")
         strategy_id = params.get("strategy_id", "")
+        requesting_agent = params.get("requesting_agent", "")
+        operation_value = float(params.get("operation_value", 0))
 
+        # Existing position-size check
         if position_size_pct > max_allowed:
             reason = (f"Position size {position_size_pct}% exceeds "
                       f"MAX_POSITION_SIZE_PCT ({max_allowed}%)")
@@ -317,6 +470,47 @@ class MultiAgentOrchestrator:
                 "position_size_pct": position_size_pct,
                 "max_allowed": max_allowed,
             }
+
+        # ── Upgrade #8: rate-limit check for the requesting agent ───────
+        if requesting_agent:
+            if not self.check_rate_limit(requesting_agent, operation_type):
+                reason = (f"Agent {requesting_agent} has exceeded its rate limit "
+                          f"for {operation_type}")
+                logger.warning("[SentinelAgent] Operation REJECTED (rate limit): %s", reason)
+                return {
+                    "status": "rejected",
+                    "approved": False,
+                    "reason": reason,
+                }
+
+            # Cumulative hourly value check for requesting agent
+            max_hourly = AGENT_MAX_HOURLY_VALUE.get(requesting_agent, float("inf"))
+            now = time.time()
+            hourly_total = sum(
+                v for ts, _, v in self._rate_limiter.get(requesting_agent, [])
+                if now - ts < 3600
+            ) + operation_value
+            if hourly_total > max_hourly:
+                reason = (f"Agent {requesting_agent} cumulative hourly value "
+                          f"{hourly_total:.2f} exceeds limit {max_hourly}")
+                logger.warning("[SentinelAgent] Operation REJECTED (value cap): %s", reason)
+                return {
+                    "status": "rejected",
+                    "approved": False,
+                    "reason": reason,
+                }
+
+            # Single-operation value check
+            max_single = AGENT_MAX_SINGLE_VALUE.get(requesting_agent, float("inf"))
+            if operation_value > max_single:
+                reason = (f"Agent {requesting_agent} single operation value "
+                          f"{operation_value} exceeds limit {max_single}")
+                logger.warning("[SentinelAgent] Operation REJECTED (single value): %s", reason)
+                return {
+                    "status": "rejected",
+                    "approved": False,
+                    "reason": reason,
+                }
 
         logger.info("[SentinelAgent] Operation APPROVED (size=%s%%, type=%s)",
                      position_size_pct, operation_type)
@@ -732,14 +926,38 @@ class MultiAgentOrchestrator:
 
         Order: sentinel health check -> strategy eval -> rebalance check -> income collection.
         Returns a summary dict with results from each phase.
+
+        Upgrade #7: agents that are FAILED or DISABLED are skipped gracefully
+        instead of aborting the entire cycle.  Dependency health is also checked.
         """
         logger.info("Starting coordination cycle")
         cycle_start = time.time()
         results = {}
+        skipped_agents: list[str] = []
+
+        # ── Helper: should we skip an agent? ────────────────────────────
+        def _should_skip(agent_name: str) -> Optional[str]:
+            """Return a reason string if the agent should be skipped, else None."""
+            h = self._agent_health.get(agent_name, AgentHealth.HEALTHY)
+            if h in (AgentHealth.FAILED, AgentHealth.DISABLED):
+                return f"{agent_name} is {h.value}"
+            # Check dependency health
+            for dep in AGENT_DEPENDENCIES.get(agent_name, []):
+                dep_h = self._agent_health.get(dep, AgentHealth.HEALTHY)
+                if dep_h == AgentHealth.FAILED:
+                    return f"dependency {dep} is FAILED"
+            return None
 
         # Phase 1: Sentinel health check
-        health = self.dispatch("SentinelAgent", "health_check", {})
+        skip_reason = _should_skip("SentinelAgent")
+        if skip_reason:
+            logger.warning("SentinelAgent skipped: %s – using safe defaults", skip_reason)
+            skipped_agents.append("SentinelAgent")
+            health = {"status": "skipped", "reason": skip_reason}
+        else:
+            health = self.dispatch("SentinelAgent", "health_check", {})
         results["health_check"] = health
+
         if health.get("status") == "emergency_stopped":
             logger.warning("Coordination cycle aborted: system in emergency stop")
             results["aborted"] = True
@@ -747,60 +965,81 @@ class MultiAgentOrchestrator:
             return results
 
         # Phase 2: Strategy evaluation - check active strategies
-        sm = _get_strategy_manager()
-        strategy_results = []
-        if sm:
-            active = sm.get_active_strategies()
-            for record in active:
-                sid = record.get("id", "")
-                perf = sm.evaluate_performance(sid)
-                strategy_results.append({"strategy_id": sid, "performance": perf})
+        skip_reason = _should_skip("StrategyAgent")
+        if skip_reason:
+            logger.warning("StrategyAgent skipped: %s", skip_reason)
+            skipped_agents.append("StrategyAgent")
+            results["strategy_eval"] = [{"status": "skipped", "reason": skip_reason}]
+        else:
+            sm = _get_strategy_manager()
+            strategy_results = []
+            if sm:
+                active = sm.get_active_strategies()
+                for record in active:
+                    sid = record.get("id", "")
+                    perf = sm.evaluate_performance(sid)
+                    strategy_results.append({"strategy_id": sid, "performance": perf})
 
-                # Check if strategy should be deactivated
-                should_deactivate, reason = sm.should_deactivate(sid, perf)
-                if should_deactivate:
-                    self.dispatch("StrategyAgent", "deactivate_strategy",
-                                  {"strategy_id": sid, "reason": reason})
-                    strategy_results[-1]["deactivated"] = True
-                    strategy_results[-1]["deactivate_reason"] = reason
-        results["strategy_eval"] = strategy_results
+                    # Check if strategy should be deactivated
+                    should_deactivate, reason = sm.should_deactivate(sid, perf)
+                    if should_deactivate:
+                        self.dispatch("StrategyAgent", "deactivate_strategy",
+                                      {"strategy_id": sid, "reason": reason})
+                        strategy_results[-1]["deactivated"] = True
+                        strategy_results[-1]["deactivate_reason"] = reason
+            results["strategy_eval"] = strategy_results
 
         # Phase 3: Rebalance check for active strategies
-        rebalance_results = []
-        if sm:
-            oracle = _get_market_oracle()
-            market_data = {}
-            if oracle:
-                pair = config.ONCHAINOS_MARKET_PAIRS[0] if config.ONCHAINOS_MARKET_PAIRS else {}
-                if pair:
-                    base, quote = pair.get("base", "ETH"), pair.get("quote", "USDC")
-                    vol = oracle.calculate_volatility(base, quote)
-                    trend = oracle.detect_trend(base, quote)
-                    market_data = {
-                        "volatility_bps": int(vol * 10000) if vol else 0,
-                        "trend": trend,
-                    }
+        skip_reason = _should_skip("RebalanceAgent")
+        if skip_reason:
+            logger.warning("RebalanceAgent skipped: %s", skip_reason)
+            skipped_agents.append("RebalanceAgent")
+            results["rebalance"] = [{"status": "skipped", "reason": skip_reason}]
+        else:
+            sm = _get_strategy_manager()
+            rebalance_results = []
+            if sm:
+                oracle = _get_market_oracle()
+                market_data = {}
+                if oracle:
+                    pair = config.ONCHAINOS_MARKET_PAIRS[0] if config.ONCHAINOS_MARKET_PAIRS else {}
+                    if pair:
+                        base, quote = pair.get("base", "ETH"), pair.get("quote", "USDC")
+                        vol = oracle.calculate_volatility(base, quote)
+                        trend = oracle.detect_trend(base, quote)
+                        market_data = {
+                            "volatility_bps": int(vol * 10000) if vol else 0,
+                            "trend": trend,
+                        }
 
-            for record in sm.get_active_strategies():
-                sid = record.get("id", "")
-                check = self.dispatch("RebalanceAgent", "check_rebalance",
-                                      {"strategy_id": sid, "market_data": market_data})
-                rebalance_results.append(check)
-                if check.get("needs_rebalance"):
-                    regime = market_data.get("trend", "low_vol")
-                    exec_result = self.dispatch(
-                        "RebalanceAgent", "execute_rebalance",
-                        {"strategy_id": sid, "new_market_regime": regime},
-                    )
-                    rebalance_results.append(exec_result)
-        results["rebalance"] = rebalance_results
+                for record in sm.get_active_strategies():
+                    sid = record.get("id", "")
+                    check = self.dispatch("RebalanceAgent", "check_rebalance",
+                                          {"strategy_id": sid, "market_data": market_data})
+                    rebalance_results.append(check)
+                    if check.get("needs_rebalance"):
+                        regime = market_data.get("trend", "low_vol")
+                        exec_result = self.dispatch(
+                            "RebalanceAgent", "execute_rebalance",
+                            {"strategy_id": sid, "new_market_regime": regime},
+                        )
+                        rebalance_results.append(exec_result)
+            results["rebalance"] = rebalance_results
 
         # Phase 4: Income collection
-        income_result = self.dispatch("IncomeAgent", "collect_revenue", {})
-        results["income_collection"] = income_result
+        skip_reason = _should_skip("IncomeAgent")
+        if skip_reason:
+            logger.warning("IncomeAgent skipped: %s", skip_reason)
+            skipped_agents.append("IncomeAgent")
+            results["income_collection"] = {"status": "skipped", "reason": skip_reason}
+        else:
+            income_result = self.dispatch("IncomeAgent", "collect_revenue", {})
+            results["income_collection"] = income_result
 
+        results["skipped_agents"] = skipped_agents
         results["cycle_duration_sec"] = round(time.time() - cycle_start, 3)
-        logger.info("Coordination cycle complete in %.3fs", results["cycle_duration_sec"])
+        logger.info("Coordination cycle complete in %.3fs (skipped: %s)",
+                     results["cycle_duration_sec"], skipped_agents or "none")
         return results
 
     def get_agent_capabilities(self, name: str) -> list[str]:
@@ -813,6 +1052,79 @@ class MultiAgentOrchestrator:
             List of action strings, or empty list if agent not found.
         """
         return list(AGENT_CAPABILITIES.get(name, []))
+
+    # ── Upgrade #7: Health status helpers ────────────────────────────────
+
+    def get_agent_health_status(self) -> dict[str, dict]:
+        """Return a snapshot of every agent's health, dependency state, and
+        consecutive failure/success counters."""
+        report: dict[str, dict] = {}
+        for name, agent in self.agents.items():
+            health = self._agent_health.get(name, AgentHealth.HEALTHY)
+            deps_ok = all(
+                self._agent_health.get(d, AgentHealth.HEALTHY)
+                not in (AgentHealth.FAILED, AgentHealth.DISABLED)
+                for d in AGENT_DEPENDENCIES.get(name, [])
+            )
+            report[name] = {
+                "health": health.value,
+                "consecutive_failures": agent.consecutive_failures,
+                "consecutive_successes": agent.consecutive_successes,
+                "dependencies_healthy": deps_ok,
+                "dependencies": AGENT_DEPENDENCIES.get(name, []),
+            }
+        return report
+
+    def set_agent_health(self, agent_name: str, health: AgentHealth) -> None:
+        """Manually override an agent's health (e.g., to DISABLED)."""
+        if agent_name in self._agent_health:
+            old = self._agent_health[agent_name]
+            self._agent_health[agent_name] = health
+            logger.info("Agent %s health manually set: %s -> %s",
+                        agent_name, old.value, health.value)
+
+    # ── Upgrade #8: Rate-limiting helpers ────────────────────────────────
+
+    def check_rate_limit(self, agent_name: str, operation_type: str) -> bool:
+        """Return True if the agent is within its hourly operation limit.
+
+        Stale entries (older than 1 hour) are pruned on each call.
+        """
+        now = time.time()
+        # Prune stale entries
+        self._rate_limiter[agent_name] = [
+            entry for entry in self._rate_limiter[agent_name]
+            if now - entry[0] < 3600
+        ]
+        max_ops = AGENT_RATE_LIMITS.get(agent_name, 100)
+        current_count = len(self._rate_limiter[agent_name])
+        return current_count < max_ops
+
+    def get_governance_report(self) -> dict:
+        """Return current rate-limit usage vs limits for every agent.
+
+        Includes operations count, cumulative value, and remaining budget
+        within the rolling 1-hour window.
+        """
+        now = time.time()
+        report: dict[str, dict] = {}
+        for name in self.agents:
+            entries = [e for e in self._rate_limiter.get(name, []) if now - e[0] < 3600]
+            ops_used = len(entries)
+            ops_limit = AGENT_RATE_LIMITS.get(name, 100)
+            cumulative_value = sum(v for _, _, v in entries)
+            max_hourly_val = AGENT_MAX_HOURLY_VALUE.get(name, float("inf"))
+            max_single_val = AGENT_MAX_SINGLE_VALUE.get(name, float("inf"))
+            report[name] = {
+                "operations_used": ops_used,
+                "operations_limit": ops_limit,
+                "operations_remaining": max(ops_limit - ops_used, 0),
+                "cumulative_value": round(cumulative_value, 2),
+                "max_hourly_value": max_hourly_val,
+                "hourly_value_remaining": round(max(max_hourly_val - cumulative_value, 0), 2),
+                "max_single_value": max_single_val,
+            }
+        return report
 
     def get_all_status(self) -> dict:
         """Get status snapshot of all agents."""

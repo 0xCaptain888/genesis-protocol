@@ -1,8 +1,9 @@
-"""Payment Handler - x402 payment processing with pay-with-any-token support.
+"""Payment Handler - x402 payment processing with multi-token settlement support.
 
 Integrates the Uniswap pay-with-any-token skill to allow agents to pay for
-Genesis services using any ERC-20 token. The skill automatically swaps the
-payer's token to USDT via Uniswap before settling the x402 payment.
+Genesis services using any ERC-20 token. Accepts USDT, USDC, OKB, and WETH
+directly as quote tokens.  For other tokens the skill automatically swaps to
+the agent's preferred settlement token via Uniswap.
 
 Deep integration adds:
   - Real x402 challenge-response flow with proper HTTP 402 headers
@@ -35,22 +36,32 @@ logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 class PaymentHandler:
     """Handles x402 payments with automatic token swap via pay-with-any-token."""
 
-    SUPPORTED_QUOTE_TOKEN = "USDT"
+    SUPPORTED_QUOTE_TOKENS = ["USDT", "USDC", "OKB", "WETH"]
 
-    def __init__(self, income_wallet_index=None):
+    def __init__(self, income_wallet_index=None, preferred_settlement_token="USDT"):
         self.income_wallet_index = income_wallet_index or WALLET_ROLES["income"]["index"]
+        self.preferred_settlement_token = preferred_settlement_token
         self.enabled = X402_ENABLED
         # In-memory ledger for revenue tracking and subscriptions
         self._revenue_ledger = []       # list of payment records
         self._subscriptions = {}        # payer_address -> subscription record
         self._refund_ledger = []        # list of refund records
+        self._token_balances = {t: 0.0 for t in self.SUPPORTED_QUOTE_TOKENS}
 
     def get_pricing(self):
         """Return the x402 pricing tiers."""
         return X402_PRICING
 
+    def get_supported_tokens(self):
+        """Return the list of accepted quote tokens."""
+        return list(self.SUPPORTED_QUOTE_TOKENS)
+
     def process_payment(self, product, payer_token, payer_address):
-        """Process an x402 payment, auto-swapping payer's token to USDT if needed.
+        """Process an x402 payment, auto-swapping payer's token if needed.
+
+        Accepts any token in SUPPORTED_QUOTE_TOKENS directly.  For tokens
+        outside the list, swaps to ``preferred_settlement_token`` via
+        pay-with-any-token.
 
         Args:
             product: One of 'signal_query', 'strategy_subscribe',
@@ -59,7 +70,8 @@ class PaymentHandler:
             payer_address: The payer's wallet address
 
         Returns:
-            dict with 'success', 'tx_hash', 'amount_usdt', 'swap_details'
+            dict with 'success', 'tx_hash', 'amount_usdt', 'settlement_token',
+            'swap_details'
         """
         if not self.enabled:
             return {"success": False, "error": "x402 payments disabled"}
@@ -72,25 +84,34 @@ class PaymentHandler:
         settle_mode = tier["settle"]
 
         logger.info(
-            "Processing x402 payment: product=%s amount=%s USDT payer_token=%s",
+            "Processing x402 payment: product=%s amount=%s payer_token=%s",
             product, amount_usdt, payer_token,
         )
 
-        # If payer is already paying in USDT, skip the swap
-        if payer_token.upper() == self.SUPPORTED_QUOTE_TOKEN:
-            logger.info("Payer using USDT directly — no swap needed")
+        # If payer is using any supported quote token, skip the swap
+        if payer_token.upper() in (t.upper() for t in self.SUPPORTED_QUOTE_TOKENS):
+            settlement_token = payer_token.upper()
+            logger.info("Payer using %s directly — no swap needed", settlement_token)
             result = self._settle_x402(
                 payer_address, amount_usdt, settle_mode,
+                settlement_token=settlement_token,
             )
+            if not result.get("error"):
+                self._token_balances[settlement_token] = (
+                    self._token_balances.get(settlement_token, 0.0)
+                    + float(amount_usdt)
+                )
             return {
                 "success": not result.get("error"),
                 "amount_usdt": amount_usdt,
+                "settlement_token": settlement_token,
                 "swap_details": None,
                 **result,
             }
 
-        # Use pay-with-any-token to swap payer's token → USDT
-        swap_result = self._swap_to_usdt(
+        # Use pay-with-any-token to swap payer's token → preferred_settlement_token
+        settlement_token = self.preferred_settlement_token
+        swap_result = self._swap_to_settlement(
             payer_token, amount_usdt, payer_address,
         )
 
@@ -98,32 +119,41 @@ class PaymentHandler:
             logger.error("Token swap failed: %s", swap_result["error"])
             return {"success": False, "error": swap_result["error"]}
 
-        # Settle the x402 payment with the swapped USDT
+        # Settle the x402 payment with the swapped token
         settle_result = self._settle_x402(
             payer_address, amount_usdt, settle_mode,
+            settlement_token=settlement_token,
         )
+
+        if not settle_result.get("error"):
+            self._token_balances[settlement_token] = (
+                self._token_balances.get(settlement_token, 0.0)
+                + float(amount_usdt)
+            )
 
         return {
             "success": not settle_result.get("error"),
             "amount_usdt": amount_usdt,
+            "settlement_token": settlement_token,
             "swap_details": swap_result,
             **settle_result,
         }
 
-    def _swap_to_usdt(self, from_token, usdt_amount, payer_address):
-        """Use pay-with-any-token skill to swap any token to USDT.
+    def _swap_to_settlement(self, from_token, amount, payer_address):
+        """Use pay-with-any-token skill to swap any token to preferred_settlement_token.
 
         This calls the Uniswap pay-with-any-token skill which handles:
         1. Quote the exact input amount needed in from_token
         2. Approve the Uniswap router
         3. Execute the swap via Uniswap V4
-        4. Deliver exact USDT amount to the income wallet
+        4. Deliver exact amount to the income wallet
         """
+        to_token = self.preferred_settlement_token
         cmd = [
             "onchainos", "skill", "run", "pay-with-any-token",
             "--from-token", from_token,
-            "--to-token", self.SUPPORTED_QUOTE_TOKEN,
-            "--amount", usdt_amount,
+            "--to-token", to_token,
+            "--amount", amount,
             "--amount-type", "exactOutput",
             "--recipient", self._get_income_address(),
             "--payer", payer_address,
@@ -141,22 +171,26 @@ class PaymentHandler:
             return {
                 "from_token": from_token,
                 "from_amount": data.get("inputAmount", "unknown"),
-                "to_token": self.SUPPORTED_QUOTE_TOKEN,
-                "to_amount": usdt_amount,
+                "to_token": to_token,
+                "to_amount": amount,
                 "tx_hash": data.get("txHash", ""),
                 "route": data.get("route", ""),
             }
         except (json.JSONDecodeError, KeyError):
-            return {"from_token": from_token, "to_amount": usdt_amount, "raw": result["stdout"]}
+            return {"from_token": from_token, "to_amount": amount, "raw": result["stdout"]}
 
-    def _settle_x402(self, payer_address, amount, settle_mode):
+    # Backward-compatible alias
+    _swap_to_usdt = _swap_to_settlement
+
+    def _settle_x402(self, payer_address, amount, settle_mode, settlement_token=None):
         """Settle the x402 payment via onchainos payment module."""
+        token = settlement_token or self.preferred_settlement_token
         cmd = [
             "onchainos", "payment", "settle",
             "--protocol", "x402",
             "--payer", payer_address,
             "--amount", amount,
-            "--token", self.SUPPORTED_QUOTE_TOKEN,
+            "--token", token,
             "--recipient-wallet-index", str(self.income_wallet_index),
             "--mode", settle_mode,
         ]
@@ -192,13 +226,13 @@ class PaymentHandler:
         if not tier:
             return {"error": f"Unknown product: {product}"}
 
-        if from_token.upper() == self.SUPPORTED_QUOTE_TOKEN:
+        if from_token.upper() in (t.upper() for t in self.SUPPORTED_QUOTE_TOKENS):
             return {"from_token": from_token, "amount": tier["amount"], "swap_needed": False}
 
         cmd = [
             "onchainos", "skill", "run", "pay-with-any-token",
             "--from-token", from_token,
-            "--to-token", self.SUPPORTED_QUOTE_TOKEN,
+            "--to-token", self.preferred_settlement_token,
             "--amount", tier["amount"],
             "--amount-type", "exactOutput",
             "--chain", str(CHAIN_ID),
@@ -541,6 +575,7 @@ class PaymentHandler:
             "total_refunds_usdt": round(total_refunds, 6),
             "by_product": {k: round(v, 6) for k, v in by_product.items()},
             "by_currency": {k: round(v, 6) for k, v in by_currency.items()},
+            "token_balances": {k: round(v, 6) for k, v in self._token_balances.items()},
             "stats": {
                 "mean_usdt": round(pay_mean, 6),
                 "median_usdt": round(pay_median, 6),

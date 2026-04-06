@@ -10,6 +10,7 @@ import logging
 import os
 import time
 import hashlib
+import uuid
 
 from . import config
 
@@ -24,6 +25,7 @@ class DecisionJournal:
         self.assembler = assembler_address or config.CONTRACTS.get("assembler", "")
         self.journal_path = config.JOURNAL_LOCAL_PATH
         self._ensure_journal_dir()
+        self.trade_links_path = os.path.join(self.journal_path, "trade_links.jsonl")
         logger.info("DecisionJournal initialized (assembler=%s)", self.assembler)
 
     # -- public API --------------------------------------------------------
@@ -46,12 +48,14 @@ class DecisionJournal:
 
         entry = {
             "id": self._next_id(),
+            "decision_id": str(uuid.uuid4()),
             "timestamp": int(time.time()),
             "strategy_id": strategy_id,
             "decision_type": decision_type,
             "reasoning": reasoning,
             "reasoning_hash": reasoning_hash,
             "params": params or {},
+            "trade_outcomes": [],
             "on_chain_status": "pending",
         }
 
@@ -99,6 +103,137 @@ class DecisionJournal:
     def export_journal(self):
         """Return the full journal as a list of dicts."""
         return self._read_journal()
+
+    def link_trade(self, decision_id, trade_data):
+        """Associate a trade execution result with a decision.
+
+        Args:
+            decision_id: The UUID of the decision to link.
+            trade_data: Dict containing trade details. Expected keys:
+                trade_id, trade_type, token_pair, amount, price,
+                pnl (optional).
+
+        Returns:
+            The trade link entry dict, or None if the decision was not found.
+        """
+        # Verify the decision exists
+        decision = self._find_decision(decision_id)
+        if decision is None:
+            logger.warning("link_trade: decision_id %s not found", decision_id)
+            return None
+
+        link_entry = {
+            "decision_id": decision_id,
+            "trade_id": trade_data.get("trade_id", str(uuid.uuid4())),
+            "trade_type": trade_data.get("trade_type", ""),
+            "token_pair": trade_data.get("token_pair", ""),
+            "amount": trade_data.get("amount", 0),
+            "price": trade_data.get("price", 0),
+            "pnl": trade_data.get("pnl"),
+            "timestamp": trade_data.get("timestamp", int(time.time())),
+        }
+
+        # Persist the link to trade_links.jsonl
+        self._append_trade_link(link_entry)
+
+        # Update the decision's trade_outcomes in the journal
+        self._append_trade_outcome(decision_id, link_entry)
+
+        logger.info(
+            "Linked trade %s to decision %s", link_entry["trade_id"], decision_id
+        )
+        return link_entry
+
+    def get_decision_with_trades(self, decision_id):
+        """Get a decision and all its linked trades.
+
+        Args:
+            decision_id: The UUID of the decision.
+
+        Returns:
+            The decision dict with a populated trade_outcomes list,
+            or None if not found.
+        """
+        decision = self._find_decision(decision_id)
+        if decision is None:
+            return None
+
+        # Ensure trade_outcomes is populated from trade_links file
+        trade_links = self._read_trade_links()
+        linked = [t for t in trade_links if t.get("decision_id") == decision_id]
+        decision["trade_outcomes"] = linked
+        return decision
+
+    def get_trade_success_rate(self, strategy_id=None):
+        """Calculate success metrics optionally filtered by strategy.
+
+        Args:
+            strategy_id: If provided, only consider decisions for this strategy.
+
+        Returns:
+            Dict with keys: total_decisions, linked_decisions, total_trades,
+            wins, losses, win_rate, avg_pnl.
+        """
+        journal = self._read_journal()
+        trade_links = self._read_trade_links()
+
+        if strategy_id is not None:
+            relevant_ids = {
+                e["decision_id"]
+                for e in journal
+                if e.get("strategy_id") == strategy_id and "decision_id" in e
+            }
+            filtered_journal = [
+                e for e in journal
+                if e.get("strategy_id") == strategy_id
+            ]
+            filtered_links = [
+                t for t in trade_links if t.get("decision_id") in relevant_ids
+            ]
+        else:
+            relevant_ids = {
+                e["decision_id"] for e in journal if "decision_id" in e
+            }
+            filtered_journal = journal
+            filtered_links = trade_links
+
+        linked_decision_ids = {t.get("decision_id") for t in filtered_links}
+
+        pnl_values = [
+            t["pnl"] for t in filtered_links
+            if t.get("pnl") is not None
+        ]
+        wins = sum(1 for p in pnl_values if p > 0)
+        losses = sum(1 for p in pnl_values if p <= 0)
+        avg_pnl = sum(pnl_values) / len(pnl_values) if pnl_values else 0.0
+
+        return {
+            "total_decisions": len(filtered_journal),
+            "linked_decisions": len(linked_decision_ids),
+            "total_trades": len(filtered_links),
+            "wins": wins,
+            "losses": losses,
+            "win_rate": wins / len(pnl_values) if pnl_values else 0.0,
+            "avg_pnl": avg_pnl,
+        }
+
+    def get_unlinked_decisions(self, limit=50):
+        """Get decisions that have no trade outcomes linked.
+
+        Args:
+            limit: Maximum number of entries to return.
+
+        Returns:
+            List of decision dicts with no linked trades.
+        """
+        trade_links = self._read_trade_links()
+        linked_ids = {t.get("decision_id") for t in trade_links}
+        journal = self._read_journal()
+        unlinked = [
+            e for e in journal
+            if e.get("decision_id") and e["decision_id"] not in linked_ids
+        ]
+        return unlinked[:limit]
 
     # -- private helpers ---------------------------------------------------
 
@@ -161,3 +296,57 @@ class DecisionJournal:
     def _ensure_journal_dir(self):
         """Create the local journal directory if it doesn't exist."""
         os.makedirs(self.journal_path, exist_ok=True)
+
+    def _find_decision(self, decision_id):
+        """Find a single decision entry by decision_id."""
+        for entry in self._read_journal():
+            if entry.get("decision_id") == decision_id:
+                return entry
+        return None
+
+    def _append_trade_link(self, link_entry):
+        """Append a trade link entry to the trade_links.jsonl file."""
+        try:
+            with open(self.trade_links_path, "a") as fh:
+                fh.write(json.dumps(link_entry) + "\n")
+        except OSError as exc:
+            logger.error("Failed to write trade link: %s", exc)
+
+    def _read_trade_links(self):
+        """Read all entries from the trade_links.jsonl file."""
+        entries = []
+        if not os.path.isfile(self.trade_links_path):
+            return entries
+        try:
+            with open(self.trade_links_path, "r") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        entries.append(json.loads(line))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.error("Failed to read trade links: %s", exc)
+        return entries
+
+    def _append_trade_outcome(self, decision_id, link_entry):
+        """Update the journal file in-place to add a trade outcome to a decision.
+
+        Rewrites the journal JSONL to append the link_entry into the
+        matching decision's trade_outcomes list.
+        """
+        filepath = os.path.join(self.journal_path, "journal.jsonl")
+        entries = self._read_journal()
+        updated = False
+        for entry in entries:
+            if entry.get("decision_id") == decision_id:
+                if "trade_outcomes" not in entry:
+                    entry["trade_outcomes"] = []
+                entry["trade_outcomes"].append(link_entry)
+                updated = True
+                break
+        if updated:
+            try:
+                with open(filepath, "w") as fh:
+                    for entry in entries:
+                        fh.write(json.dumps(entry) + "\n")
+            except OSError as exc:
+                logger.error("Failed to update journal with trade outcome: %s", exc)

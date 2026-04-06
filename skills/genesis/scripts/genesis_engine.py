@@ -25,7 +25,7 @@ class StatisticalModel:
     linear regression for trend prediction, and Bayesian confidence updating.
     """
 
-    def __init__(self):
+    def __init__(self, confidence_ttl_seconds: float = 300.0):
         self._price_history: list = []  # [(timestamp, price)]
         self._vol_history: list = []    # [(timestamp, volatility)]
         self._regime_transitions: list = []  # [(from_regime, to_regime, timestamp)]
@@ -34,6 +34,9 @@ class StatisticalModel:
         self._ema_slow = 0.0
         self._momentum_score = 0.0
         self._bayesian_prior = {"calm": 0.33, "volatile": 0.33, "trending": 0.34}
+        # Dynamic Confidence TTL
+        self._confidence_ttl_seconds = confidence_ttl_seconds
+        self._confidence_cache: dict = {}  # {key: (timestamp, raw_score)}
 
     def update_price(self, price: float, timestamp: float):
         """Feed a new price observation into the model."""
@@ -145,13 +148,41 @@ class StatisticalModel:
     def compute_confidence(self, data_quality: float, regime_clarity: float, trend_strength: float) -> float:
         """ML-based confidence scoring using logistic regression weights.
         Weights are learned from action_outcomes history.
+        Applies exponential time-decay via confidence TTL so scores degrade
+        as market data ages.
         """
-        # Default weights (updated by record_outcome)
+        cache_key = f"{data_quality:.4f}:{regime_clarity:.4f}:{trend_strength:.4f}"
+        now = time.time()
+
+        # Check cache: if inputs unchanged, apply decay to cached raw score
+        if cache_key in self._confidence_cache:
+            cached_ts, raw_score = self._confidence_cache[cache_key]
+            elapsed = now - cached_ts
+            if elapsed < self._confidence_ttl_seconds * 3:  # evict after 3x TTL
+                decay = math.exp(-elapsed / self._confidence_ttl_seconds)
+                decayed = raw_score * decay
+                return round(max(0.1, min(0.98, decayed)), 4)
+
+        # Compute fresh raw score
         w = self._get_learned_weights()
-        # Logistic function: 1/(1+exp(-(w0 + w1*x1 + w2*x2 + w3*x3)))
         z = w[0] + w[1] * data_quality + w[2] * regime_clarity + w[3] * trend_strength
-        confidence = 1.0 / (1.0 + math.exp(-z))
-        return round(max(0.1, min(0.98, confidence)), 4)
+        raw_score = 1.0 / (1.0 + math.exp(-z))
+        raw_score = max(0.1, min(0.98, raw_score))
+
+        # Store in cache
+        self._confidence_cache[cache_key] = (now, raw_score)
+
+        # Evict stale entries (beyond 3x TTL)
+        stale_keys = [k for k, (ts, _) in self._confidence_cache.items()
+                      if now - ts > self._confidence_ttl_seconds * 3]
+        for k in stale_keys:
+            del self._confidence_cache[k]
+
+        return round(raw_score, 4)
+
+    def invalidate_confidence_cache(self):
+        """Clear the confidence cache, e.g. after fresh market data arrives."""
+        self._confidence_cache.clear()
 
     def _get_learned_weights(self) -> list:
         """Learn logistic regression weights from outcome history using gradient descent."""
@@ -205,6 +236,11 @@ class GenesisEngine:
         self._preferences = {
             "risk_tolerance": 0.5, "rebalance_eagerness": 0.5, "new_strategy_bias": 0.5,
         }
+        self._preference_baselines = dict(self._preferences)  # default/initial values
+        self._regularization_strength = 0.1
+        self._evolution_lr = 0.05  # learning rate for evolution updates
+        self._evolution_max_step = 0.02  # max change per parameter per step
+        self._recent_decisions_for_validation: list = []  # track recent N decisions for holdout
         self._predictions: list = []   # [(ts, prediction_dict, outcome_dict|None)]
         self._prediction_accuracy = 0.5
         self._ml_model = StatisticalModel()
@@ -418,43 +454,94 @@ class GenesisEngine:
     # ═══════════════════════════════════════════════════════════════════
 
     def evolve(self) -> dict:
-        """Adjust internal preferences based on historical performance."""
+        """Adjust internal preferences based on historical performance.
+        Uses L2 regularization toward baselines, parameter change rate limiting,
+        and a simple validation holdout to detect overfitting.
+        """
         try:
             summary = self.strategy_mgr.get_strategy_summary()
             avg_pnl = summary.get("avg_pnl_bps", 0)
             active_n = summary.get("active_count", 0)
             old = dict(self._preferences)
             p = self._preferences
-            # Risk tolerance adapts to P&L
+            lr = self._evolution_lr
+            reg = self._regularization_strength
+            baselines = self._preference_baselines
+            max_step = self._evolution_max_step
+
+            # --- Compute raw gradients for each preference ---
+            gradients = {"risk_tolerance": 0.0, "rebalance_eagerness": 0.0, "new_strategy_bias": 0.0}
+
+            # Risk tolerance gradient from P&L
             if avg_pnl > 100:
-                p["risk_tolerance"] = min(p["risk_tolerance"] + 0.05, 0.9)
+                gradients["risk_tolerance"] = 1.0
             elif avg_pnl < -100:
-                p["risk_tolerance"] = max(p["risk_tolerance"] - 0.05, 0.1)
-            # Rebalance eagerness: increase if frequent rebalances in history
+                gradients["risk_tolerance"] = -1.0
+
+            # Rebalance eagerness gradient
             recent = self.journal.get_recent_decisions(20)
-            if sum(1 for d in recent if d.get("decision_type") == "REBALANCE_EXECUTE") > 3:
-                p["rebalance_eagerness"] = min(p["rebalance_eagerness"] + 0.05, 0.9)
-            # New strategy bias: fewer active -> more eager
+            rebalance_count = sum(1 for d in recent if d.get("decision_type") == "REBALANCE_EXECUTE")
+            if rebalance_count > 3:
+                gradients["rebalance_eagerness"] = 1.0
+
+            # New strategy bias gradient based on active count
             if active_n > 3:
-                p["new_strategy_bias"] = max(p["new_strategy_bias"] - 0.1, 0.1)
+                gradients["new_strategy_bias"] = -2.0
             elif active_n == 0:
-                p["new_strategy_bias"] = min(p["new_strategy_bias"] + 0.1, 0.9)
+                gradients["new_strategy_bias"] = 2.0
+
             # Low prediction accuracy -> reduce risk
             if self._prediction_accuracy < 0.4:
-                p["risk_tolerance"] = max(p["risk_tolerance"] - 0.1, 0.1)
-            # ML-driven adaptation: adjust based on forecast accuracy
+                gradients["risk_tolerance"] += -2.0
+
+            # ML-driven: volatility trend adjustment
             vol_forecast = self._ml_model.rolling_volatility_forecast()
             if vol_forecast.get("vol_trend") == "increasing":
-                p["risk_tolerance"] = max(p["risk_tolerance"] - 0.03, 0.1)
+                gradients["risk_tolerance"] += -0.6
             elif vol_forecast.get("vol_trend") == "decreasing":
-                p["risk_tolerance"] = min(p["risk_tolerance"] + 0.02, 0.9)
+                gradients["risk_tolerance"] += 0.4
+
+            # --- Validation holdout: detect overfitting ---
+            # Track recent decisions and use last 20% as validation
+            self._recent_decisions_for_validation.extend(recent)
+            if len(self._recent_decisions_for_validation) > 100:
+                self._recent_decisions_for_validation = self._recent_decisions_for_validation[-100:]
+
+            validation_warning = False
+            tracked = self._recent_decisions_for_validation
+            if len(tracked) >= 10:
+                split = max(1, int(len(tracked) * 0.8))
+                train_set = tracked[:split]
+                val_set = tracked[split:]
+                # Simple performance proxy: fraction of executed (non-skipped) decisions
+                def _perf(decisions):
+                    executed = sum(1 for d in decisions if d.get("decision_type", "").endswith("EXECUTE"))
+                    return executed / len(decisions) if decisions else 0.5
+                train_perf = _perf(train_set)
+                val_perf = _perf(val_set)
+                # Overfitting signal: training improves but validation drops
+                if train_perf > 0.5 and val_perf < train_perf * 0.7:
+                    validation_warning = True
+                    lr *= 0.5  # reduce learning rate
+
+            # --- Apply regularized updates with rate limiting ---
+            for key in gradients:
+                raw_update = lr * (gradients[key] - reg * (p[key] - baselines[key]))
+                # Rate limit: clamp update magnitude
+                clamped = max(-max_step, min(max_step, raw_update))
+                new_val = p[key] + clamped
+                p[key] = max(0.1, min(0.9, new_val))
+
             self._last_evolution = time.time()
             self.journal.log_decision(0, "META_COGNITION",
                 f"Evolution: prefs {old} -> {p}",
                 {"old": old, "new": dict(p), "avg_pnl_bps": avg_pnl,
-                 "prediction_accuracy": self._prediction_accuracy})
-            logger.info("Evolution complete: %s", p)
-            return {"old": old, "new": dict(p)}
+                 "prediction_accuracy": self._prediction_accuracy,
+                 "regularization_strength": reg,
+                 "validation_warning": validation_warning,
+                 "effective_lr": lr})
+            logger.info("Evolution complete: %s (reg=%.2f, val_warn=%s)", p, reg, validation_warning)
+            return {"old": old, "new": dict(p), "validation_warning": validation_warning}
         except Exception as exc:
             logger.error("Evolution layer failed: %s", exc)
             return {"error": str(exc)}

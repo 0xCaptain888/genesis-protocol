@@ -9,12 +9,35 @@ import logging
 import math
 import time
 import statistics
+import urllib.request
+import urllib.error
 
 from . import config
 from .onchainos_api import OnchainOSAPI
 
 logger = logging.getLogger(__name__)
 PRICE_CACHE_TTL = 60  # seconds
+
+# Symbol -> CoinGecko ID mapping for common tokens
+_SYMBOL_TO_COINGECKO_ID = {
+    "ETH": "ethereum",
+    "BTC": "bitcoin",
+    "OKB": "okb",
+    "USDT": "tether",
+    "USDC": "usd-coin",
+    "DAI": "dai",
+    "WETH": "wethereum",
+    "WBTC": "wrapped-bitcoin",
+    "SOL": "solana",
+    "AVAX": "avalanche-2",
+    "MATIC": "matic-network",
+    "BNB": "binancecoin",
+    "LINK": "chainlink",
+    "UNI": "uniswap",
+    "AAVE": "aave",
+    "ARB": "arbitrum",
+    "OP": "optimism",
+}
 
 # Maps internal regime names to config.STRATEGY_PRESETS keys
 _REGIME_TO_PRESET = {
@@ -27,7 +50,11 @@ _REGIME_TO_PRESET = {
 
 
 class MarketOracle:
-    """Aggregates market data from OnchainOS for strategy decisions."""
+    """Aggregates market data from multiple oracle sources for strategy decisions.
+
+    Fetches prices from OnchainOS, CoinGecko, and OKX, using a median-based
+    consensus mechanism to improve reliability and resilience.
+    """
 
     def __init__(self):
         """Initialize with configured trading pairs, price cache, and history."""
@@ -36,15 +63,23 @@ class MarketOracle:
         self._price_cache = {}  # (base, quote) -> (timestamp, price)
         self._price_history = {}  # (base, quote) -> [(timestamp, price), ...]
         self._api = OnchainOSAPI()
+        self._source_reliability = {
+            "onchainos": {"success": 0, "failure": 0},
+            "coingecko": {"success": 0, "failure": 0},
+            "okx": {"success": 0, "failure": 0},
+        }
         logger.info("MarketOracle initialized with %d pairs (REST API available: %s)",
                      len(self.pairs), self._api._has_credentials)
 
     # -- Price fetching ------------------------------------------------- #
 
     def fetch_price(self, base: str, quote: str) -> float | None:
-        """Get the current price for a base/quote pair via onchainos CLI.
+        """Get the current price for a base/quote pair using multi-source consensus.
 
-        Returns the cached value if it is younger than PRICE_CACHE_TTL seconds.
+        Fetches from OnchainOS, CoinGecko, and OKX in parallel-fashion, then
+        returns the median of all successful responses.  Falls back gracefully
+        when one or more sources are unavailable.  Returns the cached value if
+        it is younger than PRICE_CACHE_TTL seconds.
         """
         key = (base, quote)
         now = time.time()
@@ -53,24 +88,132 @@ class MarketOracle:
             logger.debug("Cache hit for %s/%s", base, quote)
             return cached[1]
 
-        # Try REST API first, fall back to CLI subprocess
-        data = self._api.get_price(base, quote, str(self.chain_id))
-        if data is None:
-            cmd = [
-                "onchainos", "market", "price",
-                "--base", base,
-                "--quote", quote,
-                "--chain", self.chain_id,
-            ]
-            data = self._run_cmd(cmd)
-        if data is None:
+        # Collect prices from all available sources
+        source_prices: dict[str, float | None] = {}
+
+        # Source 1: OnchainOS (REST API + CLI fallback)
+        source_prices["onchainos"] = self._fetch_from_onchainos(base, quote)
+
+        # Source 2: CoinGecko via server proxy
+        source_prices["coingecko"] = self._fetch_from_coingecko(base, quote)
+
+        # Source 3: OKX via server proxy
+        source_prices["okx"] = self._fetch_from_okx(base, quote)
+
+        # Track reliability and collect valid prices
+        valid_prices: list[float] = []
+        succeeded: list[str] = []
+        failed: list[str] = []
+        for source, px in source_prices.items():
+            if px is not None and px > 0:
+                self._source_reliability[source]["success"] += 1
+                valid_prices.append(px)
+                succeeded.append(source)
+            else:
+                self._source_reliability[source]["failure"] += 1
+                failed.append(source)
+
+        if not valid_prices:
+            logger.error("All price sources failed for %s/%s", base, quote)
             return None
 
-        price = float(data.get("price", 0))
+        # Use median for consensus
+        price = statistics.median(valid_prices)
+
+        if failed:
+            logger.warning(
+                "Price sources failed for %s/%s: %s", base, quote, ", ".join(failed)
+            )
+        logger.info(
+            "Consensus price %s/%s = %s (median of %d sources: %s; values: %s)",
+            base, quote, price, len(valid_prices),
+            ", ".join(succeeded),
+            ", ".join(f"{s}={source_prices[s]}" for s in succeeded),
+        )
+
         self._price_cache[key] = (now, price)
         self.update_price_history(base, quote, price)
-        logger.info("Fetched price %s/%s = %s", base, quote, price)
         return price
+
+    def _fetch_from_onchainos(self, base: str, quote: str) -> float | None:
+        """Fetch price from OnchainOS REST API with CLI fallback."""
+        try:
+            data = self._api.get_price(base, quote, str(self.chain_id))
+            if data is None:
+                cmd = [
+                    "onchainos", "market", "price",
+                    "--base", base,
+                    "--quote", quote,
+                    "--chain", self.chain_id,
+                ]
+                data = self._run_cmd(cmd)
+            if data is not None:
+                return float(data.get("price", 0))
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.error("OnchainOS price parse error for %s/%s: %s", base, quote, exc)
+        return None
+
+    def _fetch_from_coingecko(self, base: str, quote: str) -> float | None:
+        """Fetch price from CoinGecko via the server's /cg-api/ proxy.
+
+        Maps token symbols to CoinGecko IDs and queries the simple/price
+        endpoint. Returns ``None`` on any failure.
+        """
+        base_id = _SYMBOL_TO_COINGECKO_ID.get(base.upper())
+        if base_id is None:
+            # Try using the lowercase symbol as a fallback ID
+            base_id = base.lower()
+            logger.debug("No CoinGecko ID mapping for %s, trying '%s'", base, base_id)
+
+        quote_lower = quote.lower()
+        # CoinGecko uses 'usd' for stablecoins when used as vs_currency
+        if quote_lower in ("usdt", "usdc"):
+            quote_lower = "usd"
+
+        url = (
+            f"http://localhost:3000/cg-api/api/v3/simple/price"
+            f"?ids={base_id}&vs_currencies={quote_lower}"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read().decode())
+            price = body.get(base_id, {}).get(quote_lower)
+            if price is not None:
+                return float(price)
+            logger.warning("CoinGecko returned no price for %s/%s: %s", base, quote, body)
+        except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+            logger.error("CoinGecko request failed for %s/%s: %s", base, quote, exc)
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+            logger.error("CoinGecko parse error for %s/%s: %s", base, quote, exc)
+        return None
+
+    def _fetch_from_okx(self, base: str, quote: str) -> float | None:
+        """Fetch price from OKX via the server's /okx-api/ proxy.
+
+        Constructs the instrument ID as ``{BASE}-{QUOTE}`` and queries the
+        v5 market ticker endpoint. Returns ``None`` on any failure.
+        """
+        inst_id = f"{base.upper()}-{quote.upper()}"
+        url = (
+            f"http://localhost:3000/okx-api/api/v5/market/ticker"
+            f"?instId={inst_id}"
+        )
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read().decode())
+            data_list = body.get("data")
+            if data_list and len(data_list) > 0:
+                last = data_list[0].get("last")
+                if last is not None:
+                    return float(last)
+            logger.warning("OKX returned no price for %s/%s: %s", base, quote, body)
+        except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+            logger.error("OKX request failed for %s/%s: %s", base, quote, exc)
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+            logger.error("OKX parse error for %s/%s: %s", base, quote, exc)
+        return None
 
     def fetch_all_prices(self) -> dict:
         """Fetch prices for every configured pair.
@@ -85,6 +228,25 @@ class MarketOracle:
                 results[(base, quote)] = price
         logger.info("Fetched prices for %d/%d pairs", len(results), len(self.pairs))
         return results
+
+    def get_source_health(self) -> dict:
+        """Return reliability statistics for each oracle price source.
+
+        Returns a dict keyed by source name, each containing ``success``,
+        ``failure``, ``total``, and ``reliability_pct`` fields.
+        """
+        health = {}
+        for source, counts in self._source_reliability.items():
+            total = counts["success"] + counts["failure"]
+            reliability = (counts["success"] / total * 100) if total > 0 else 0.0
+            health[source] = {
+                "success": counts["success"],
+                "failure": counts["failure"],
+                "total": total,
+                "reliability_pct": round(reliability, 2),
+            }
+        logger.info("Source health: %s", health)
+        return health
 
     # -- Analytics ------------------------------------------------------- #
 

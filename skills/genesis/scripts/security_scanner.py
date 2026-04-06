@@ -16,7 +16,9 @@ import hashlib
 import json
 import logging
 import subprocess
+import sys
 import time
+from collections import deque
 from typing import Optional
 
 from .config import DRY_RUN, CHAIN_ID, LOG_LEVEL
@@ -665,3 +667,212 @@ def _safe_float(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+# ── Runtime Anomaly Monitoring ────────────────────────────────────────────
+
+# Default configuration for the runtime monitor
+_DEFAULT_HISTORY_SIZE = 200       # Max operations stored per component
+_DEFAULT_WINDOW_SIZE = 50         # Sliding window for error-rate calculation
+_LATENCY_ANOMALY_FACTOR = 3.0    # Latency > 3x rolling avg = anomaly
+_ERROR_RATE_THRESHOLD = 0.20     # Error rate > 20% = anomaly
+_CRITICAL_ERROR_RATE = 0.50      # Error rate > 50% = critical
+
+
+class RuntimeMonitor:
+    """Track the agent's own runtime behaviour and flag anomalies.
+
+    Monitors operation latencies, error rates, and memory usage across
+    named components (e.g. ``market_oracle``, ``payment``, ``strategy``).
+    All history buffers use :class:`collections.deque` with a fixed
+    ``maxlen`` so memory is bounded.
+
+    Severity levels:
+        * ``"info"``     -- metric of interest, no action needed
+        * ``"warning"``  -- threshold breached, warrants attention
+        * ``"critical"`` -- severe degradation, intervention likely needed
+    """
+
+    SEVERITY_INFO = "info"
+    SEVERITY_WARNING = "warning"
+    SEVERITY_CRITICAL = "critical"
+
+    def __init__(self, history_size: int = _DEFAULT_HISTORY_SIZE,
+                 window_size: int = _DEFAULT_WINDOW_SIZE):
+        self._history_size = history_size
+        self._window_size = window_size
+
+        # component -> deque of (operation, duration_ms, success, timestamp)
+        self._operations: dict[str, deque] = {}
+        # component -> operation -> deque of duration_ms (successes only)
+        self._latencies: dict[str, dict[str, deque]] = {}
+
+        self._logger = logging.getLogger("genesis.runtime_monitor")
+
+    # ── Public API ────────────────────────────────────────────────────
+
+    def record_operation(self, component: str, operation: str,
+                         duration_ms: float, success: bool) -> None:
+        """Log a single operation for *component*.
+
+        Args:
+            component:   Logical subsystem name (e.g. ``"market_oracle"``).
+            operation:   Operation identifier (e.g. ``"fetch_price"``).
+            duration_ms: Wall-clock duration in milliseconds.
+            success:     Whether the operation completed without error.
+        """
+        if component not in self._operations:
+            self._operations[component] = deque(maxlen=self._history_size)
+            self._latencies[component] = {}
+
+        self._operations[component].append(
+            (operation, duration_ms, success, time.time())
+        )
+
+        if success:
+            if operation not in self._latencies[component]:
+                self._latencies[component][operation] = deque(
+                    maxlen=self._history_size,
+                )
+            self._latencies[component][operation].append(duration_ms)
+
+    def check_anomalies(self) -> list[dict]:
+        """Scan all tracked components and return a list of detected anomalies.
+
+        Each anomaly dict contains:
+            ``component``, ``type``, ``detail``, ``severity``, ``value``,
+            ``threshold``, ``timestamp``.
+        """
+        anomalies: list[dict] = []
+        now = time.time()
+
+        for component, ops in self._operations.items():
+            # --- Error-rate check (sliding window) ---
+            recent = list(ops)[-self._window_size:]
+            if recent:
+                failures = sum(1 for _, _, ok, _ in recent if not ok)
+                error_rate = failures / len(recent)
+                if error_rate > _CRITICAL_ERROR_RATE:
+                    anomalies.append(self._anomaly(
+                        component, "error_rate",
+                        f"{failures}/{len(recent)} operations failed",
+                        self.SEVERITY_CRITICAL, error_rate,
+                        _CRITICAL_ERROR_RATE, now,
+                    ))
+                elif error_rate > _ERROR_RATE_THRESHOLD:
+                    anomalies.append(self._anomaly(
+                        component, "error_rate",
+                        f"{failures}/{len(recent)} operations failed",
+                        self.SEVERITY_WARNING, error_rate,
+                        _ERROR_RATE_THRESHOLD, now,
+                    ))
+
+            # --- Latency check per operation ---
+            for op, durations in self._latencies.get(component, {}).items():
+                if len(durations) < 2:
+                    continue
+                avg = sum(durations) / len(durations)
+                latest = durations[-1]
+                threshold = avg * _LATENCY_ANOMALY_FACTOR
+                if latest > threshold:
+                    severity = (self.SEVERITY_CRITICAL
+                                if latest > avg * _LATENCY_ANOMALY_FACTOR * 2
+                                else self.SEVERITY_WARNING)
+                    anomalies.append(self._anomaly(
+                        component, "latency_spike",
+                        f"{op}: {latest:.1f}ms vs avg {avg:.1f}ms",
+                        severity, latest, threshold, now,
+                    ))
+
+        # --- Memory check ---
+        mem_anomaly = self._check_memory(now)
+        if mem_anomaly:
+            anomalies.append(mem_anomaly)
+
+        return anomalies
+
+    def get_health_report(self) -> dict:
+        """Return an overall health snapshot of all tracked components.
+
+        Returns:
+            dict with ``components`` (per-component stats), ``anomalies``
+            (current anomaly list), ``memory_mb``, and ``timestamp``.
+        """
+        report: dict = {
+            "timestamp": time.time(),
+            "memory_mb": self._current_memory_mb(),
+            "components": {},
+            "anomalies": self.check_anomalies(),
+        }
+
+        for component, ops in self._operations.items():
+            recent = list(ops)[-self._window_size:]
+            total = len(recent)
+            failures = sum(1 for _, _, ok, _ in recent if not ok)
+            all_durations = [d for _, d, ok, _ in recent if ok]
+            avg_latency = (sum(all_durations) / len(all_durations)
+                           if all_durations else 0.0)
+            report["components"][component] = {
+                "total_ops": len(ops),
+                "recent_ops": total,
+                "recent_failures": failures,
+                "error_rate": round(failures / total, 4) if total else 0.0,
+                "avg_latency_ms": round(avg_latency, 2),
+                "operations_tracked": list(
+                    self._latencies.get(component, {}).keys()
+                ),
+            }
+
+        return report
+
+    def reset_counters(self) -> None:
+        """Clear all tracking data."""
+        self._operations.clear()
+        self._latencies.clear()
+        self._logger.info("RuntimeMonitor counters reset")
+
+    # ── Internal helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _anomaly(component: str, anomaly_type: str, detail: str,
+                 severity: str, value: float, threshold: float,
+                 timestamp: float) -> dict:
+        return {
+            "component": component,
+            "type": anomaly_type,
+            "detail": detail,
+            "severity": severity,
+            "value": round(value, 4),
+            "threshold": round(threshold, 4),
+            "timestamp": timestamp,
+        }
+
+    @staticmethod
+    def _current_memory_mb() -> float:
+        """Return current process RSS in megabytes (best-effort)."""
+        try:
+            import resource as _resource
+            # maxrss is in KB on Linux, bytes on macOS
+            rss_kb = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
+            if sys.platform == "darwin":
+                return round(rss_kb / (1024 * 1024), 2)
+            return round(rss_kb / 1024, 2)
+        except (ImportError, AttributeError):
+            return 0.0
+
+    def _check_memory(self, now: float) -> Optional[dict]:
+        """Flag a memory anomaly if RSS exceeds conservative thresholds."""
+        mb = self._current_memory_mb()
+        if mb > 1024:
+            return self._anomaly(
+                "system", "memory_usage",
+                f"RSS {mb:.1f} MB exceeds 1024 MB",
+                self.SEVERITY_CRITICAL, mb, 1024.0, now,
+            )
+        if mb > 512:
+            return self._anomaly(
+                "system", "memory_usage",
+                f"RSS {mb:.1f} MB exceeds 512 MB",
+                self.SEVERITY_WARNING, mb, 512.0, now,
+            )
+        return None
