@@ -8,7 +8,7 @@
 
 > **一句话定位**: Genesis 是 X Layer 上首个 AI 自主管理 Uniswap V4 Hook 策略的引擎 — 让 LP 从「手动调参」进化为「AI 自动驾驶」。
 
-**[🌐 Live dApp](https://jnq7rage.mule.page/)** · **[📦 GitHub](https://github.com/0xCaptain888/genesis-protocol)** · **[🔍 OKLink 验证](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)**
+**[🌐 Live dApp](https://jnq7rage.mule.page/)** · **[📦 GitHub](https://github.com/0xCaptain888/genesis-protocol)** · **[🦞 Moltbook](https://www.moltbook.com/u/0xcaptain888)** · **[🔍 OKLink 验证](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)**
 
 > **OKX Build X Hackathon** 参赛项目 (奖池 14,000 USDT)
 
