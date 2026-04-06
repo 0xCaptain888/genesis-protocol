@@ -236,13 +236,16 @@ class MoltbookIdentityManager:
         if result.get("error"):
             return result
 
+        # Unwrap the 'agent' envelope if present (API returns {agent: {...}})
+        profile = result.get("agent", result)
+
         # Cache the result
         self._identity_cache[cache_key] = {
-            "profile": result,
+            "profile": profile,
             "cached_at": time.time(),
         }
-        logger.info("Fetched profile for %s (karma=%s)", cache_key, result.get("karma", "?"))
-        return result
+        logger.info("Fetched profile for %s (karma=%s)", cache_key, profile.get("karma", "?"))
+        return profile
 
     async def get_reputation_score(self, agent_name: str = None) -> dict:
         """Calculate composite reputation score from Moltbook data.
@@ -261,9 +264,11 @@ class MoltbookIdentityManager:
             return {"error": profile["error"], "trust_score": 0}
 
         karma = int(profile.get("karma", 0))
-        followers = int(profile.get("followers_count", 0))
-        posts = int(profile.get("post_count", 0))
-        comments = int(profile.get("comment_count", 0))
+        # API returns follower_count, following_count, posts_count, comments_count
+        # (not followers_count, post_count, comment_count)
+        followers = int(profile.get("follower_count", profile.get("followers_count", 0)))
+        posts = int(profile.get("posts_count", profile.get("post_count", 0)))
+        comments = int(profile.get("comments_count", profile.get("comment_count", 0)))
 
         # Composite trust score calculation:
         # - Karma: 40% weight, log-scaled, max contribution at 10000
