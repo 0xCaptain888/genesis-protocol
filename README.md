@@ -8,7 +8,7 @@
 
 > **一句话定位**: Genesis 是 X Layer 上首个 AI 自主管理 Uniswap V4 Hook 策略的引擎 — 让 LP 从「手动调参」进化为「AI 自动驾驶」。
 
-**[🌐 Live dApp](https://ujf2c4fh.mule.page/)** · **[📦 GitHub](https://github.com/0xCaptain888/genesis-protocol)** · **[🔍 OKLink 验证](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)**
+**[🌐 Live dApp](https://jnq7rage.mule.page/)** · **[📦 GitHub](https://github.com/0xCaptain888/genesis-protocol)** · **[🔍 OKLink 验证](https://www.oklink.com/xlayer/address/0xC5E851fEC9188DD4F6cCB2Ebc134b33210D4aC78)**
 
 > **OKX Build X Hackathon** 参赛项目 (奖池 14,000 USDT)
 
@@ -30,7 +30,7 @@
 
 | 步骤 | 操作 | 预期 |
 |------|------|------|
-| 1 | 打开 [Live dApp](https://ujf2c4fh.mule.page/) | 页面加载，链上数据自动刷新 |
+| 1 | 打开 [Live dApp](https://jnq7rage.mule.page/) | 页面加载，链上数据自动刷新 |
 | 2 | 点击 **「3分钟体验」** | 交互式引导 Tour 启动 |
 | 3 | 点击 **「启动认知循环」** | 实时观看 5 层 AI 推理 + DeepSeek LLM 生成分析 |
 | 4 | 连接 OKX Wallet | 可部署策略、铸造 NFT、发送 x402 真实 OKB 支付 |
@@ -172,7 +172,7 @@ Vite + ES 模块 + ECharts + ethers.js v6 | 10 个独立模块 | 中英双语 i1
 | 交付物 | 状态 | 验证方式 |
 |--------|------|---------|
 | 5 个 Solidity 模块 + 核心合约 | ✅ 已部署主网 | OKLink 可查 |
-| Live dApp (交互式前端) | ✅ 已上线 | [ujf2c4fh.mule.page](https://ujf2c4fh.mule.page/) |
+| Live dApp (交互式前端) | ✅ 已上线 | [jnq7rage.mule.page](https://jnq7rage.mule.page/) |
 | AI 5 层认知引擎 | ✅ 可运行 | dApp 实时演示 |
 | LLM 推理集成 (DeepSeek) | ✅ 已集成 | dApp 可触发 |
 | 策略 NFT 铸造 | ✅ 6 枚已铸 | OKLink 可查 |

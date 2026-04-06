@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
   const errors = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   
-  await page.goto('https://ujf2c4fh.mule.page/', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.goto('https://jnq7rage.mule.page/', { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(12000);
 
   console.log('=== P0-1: 仪表盘全部显示 "--" ===');
