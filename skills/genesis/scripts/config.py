@@ -228,3 +228,32 @@ UNISWAP_V4 = {
 
 # ─── Agentic Wallet Address ──────────────────────────────────────────────
 AGENTIC_WALLET = "0xd2D120eB7cEd38551cCeFb48021067d41D6542d3"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V2 Ecosystem Expansion Config
+# ═══════════════════════════════════════════════════════════════════════════
+
+import os
+
+# ─── Moltbook Identity Integration ──────────────────────────────────────
+MOLTBOOK_API_KEY = os.getenv("MOLTBOOK_API_KEY", "")
+MOLTBOOK_APP_KEY = os.getenv("MOLTBOOK_APP_KEY", "")
+MOLTBOOK_BASE_URL = os.getenv("MOLTBOOK_BASE_URL", "https://www.moltbook.com")
+MOLTBOOK_IDENTITY_REQUIRED = os.getenv("MOLTBOOK_IDENTITY_REQUIRED", "false").lower() == "true"
+MOLTBOOK_TRUST_BONUS_BPS = int(os.getenv("MOLTBOOK_TRUST_BONUS_BPS", "50"))  # 0.5% fee discount
+
+# ─── Data Integrity Verification ────────────────────────────────────────
+DATA_INTEGRITY_ENABLED = os.getenv("DATA_INTEGRITY_ENABLED", "true").lower() == "true"
+DATA_INTEGRITY_MAX_DEVIATION_BPS = int(os.getenv("DATA_INTEGRITY_MAX_DEVIATION_BPS", "500"))
+DATA_INTEGRITY_MAX_STALENESS = int(os.getenv("DATA_INTEGRITY_MAX_STALENESS", "300"))
+DATA_INTEGRITY_MIN_SOURCES = int(os.getenv("DATA_INTEGRITY_MIN_SOURCES", "2"))
+
+# ─── Strategy Licensing ─────────────────────────────────────────────────
+STRATEGY_LICENSE_ENABLED = os.getenv("STRATEGY_LICENSE_ENABLED", "true").lower() == "true"
+STRATEGY_LICENSE_PROTOCOL_FEE_BPS = int(os.getenv("STRATEGY_LICENSE_PROTOCOL_FEE_BPS", "500"))
+STRATEGY_LICENSE_TREASURY = os.getenv("STRATEGY_LICENSE_TREASURY", "")
+
+# ─── Contract Addresses (V2 modules - to be filled after deployment) ────
+DATA_INTEGRITY_MODULE_ADDRESS = os.getenv("DATA_INTEGRITY_MODULE_ADDRESS", "")
+MOLTBOOK_IDENTITY_MODULE_ADDRESS = os.getenv("MOLTBOOK_IDENTITY_MODULE_ADDRESS", "")
+STRATEGY_LICENSE_ADDRESS = os.getenv("STRATEGY_LICENSE_ADDRESS", "")
