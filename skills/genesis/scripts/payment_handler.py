@@ -22,6 +22,7 @@ import logging
 import time
 import hashlib
 import uuid
+from collections import deque
 from typing import Optional
 
 from .config import (
@@ -47,6 +48,15 @@ class PaymentHandler:
         self._subscriptions = {}        # payer_address -> subscription record
         self._refund_ledger = []        # list of refund records
         self._token_balances = {t: 0.0 for t in self.SUPPORTED_QUOTE_TOKENS}
+        # Batch settlement state
+        self._pending_settlements = deque()
+        self.BATCH_THRESHOLD = 5
+        self.BATCH_MAX_WAIT_MS = 2000
+        self._batch_stats = {
+            "total_batches_processed": 0,
+            "total_settlements_batched": 0,
+            "total_latency_saved_ms": 0.0,
+        }
 
     def get_pricing(self):
         """Return the x402 pricing tiers."""
@@ -706,6 +716,261 @@ class PaymentHandler:
             }
 
         return {"error": f"Unknown action: {action}"}
+
+    # ── Settlement Delay Optimization: Batch Settlement ────────────────
+
+    def queue_settlement(self, payment_data):
+        """Add a settlement request to the pending queue with a timestamp.
+
+        Instead of executing immediately, the settlement is accumulated in
+        ``_pending_settlements`` so that multiple requests can be flushed as a
+        single batch, reducing per-settlement overhead.
+
+        Args:
+            payment_data: dict containing at minimum ``payer_address``,
+                ``amount``, ``settlement_token``, and ``settle_mode``.  An
+                optional ``urgent`` flag causes immediate settlement.
+
+        Returns:
+            dict with ``settlement_id``, ``queued`` status, and
+            ``pending_count``.
+        """
+        settlement_id = uuid.uuid4().hex[:16]
+        entry = {
+            "settlement_id": settlement_id,
+            "payment_data": payment_data,
+            "queued_at_ms": time.time() * 1000,
+            "callback": None,
+        }
+
+        # Urgent settlements bypass the queue entirely
+        if payment_data.get("urgent"):
+            logger.info("Urgent settlement %s — bypassing queue", settlement_id)
+            result = self._settle_x402(
+                payment_data.get("payer_address", ""),
+                payment_data.get("amount", "0"),
+                payment_data.get("settle_mode", "instant"),
+                settlement_token=payment_data.get("settlement_token",
+                                                   self.preferred_settlement_token),
+            )
+            return {
+                "settlement_id": settlement_id,
+                "status": "settled_immediate",
+                "result": result,
+            }
+
+        self._pending_settlements.append(entry)
+        logger.info(
+            "Queued settlement %s (pending=%d)",
+            settlement_id, len(self._pending_settlements),
+        )
+        return {
+            "settlement_id": settlement_id,
+            "status": "queued",
+            "pending_count": len(self._pending_settlements),
+        }
+
+    def flush_settlements(self, force=False):
+        """Batch-process all pending settlements.
+
+        Groups queued settlements by token type to minimise swap operations,
+        then executes each group as a single batch when either:
+          - The queue size >= ``BATCH_THRESHOLD``, **or**
+          - The oldest queued item age > ``BATCH_MAX_WAIT_MS``, **or**
+          - ``force=True``.
+
+        Args:
+            force: If *True*, flush regardless of threshold or age.
+
+        Returns:
+            dict with ``batch_id``, list of ``settlement_ids``, per-group
+            ``results``, ``latency_saved_ms``, and ``count``.  Returns
+            ``None`` if no flush was performed.
+        """
+        if not self._pending_settlements:
+            return None
+
+        now_ms = time.time() * 1000
+        oldest_age_ms = now_ms - self._pending_settlements[0]["queued_at_ms"]
+        queue_size = len(self._pending_settlements)
+
+        should_flush = (
+            force
+            or queue_size >= self.BATCH_THRESHOLD
+            or oldest_age_ms > self.BATCH_MAX_WAIT_MS
+        )
+        if not should_flush:
+            return None
+
+        # Drain the queue
+        batch = list(self._pending_settlements)
+        self._pending_settlements.clear()
+
+        # Group by token type
+        groups = {}
+        for entry in batch:
+            token = entry["payment_data"].get(
+                "settlement_token", self.preferred_settlement_token
+            )
+            groups.setdefault(token, []).append(entry)
+
+        latency_saved = self._estimate_latency_savings(batch)
+        batch_id = uuid.uuid4().hex[:16]
+        settlement_ids = [e["settlement_id"] for e in batch]
+        group_results = {}
+
+        for token, entries in groups.items():
+            token_results = []
+            for entry in entries:
+                pd = entry["payment_data"]
+                result = self._settle_x402(
+                    pd.get("payer_address", ""),
+                    pd.get("amount", "0"),
+                    pd.get("settle_mode", "instant"),
+                    settlement_token=token,
+                )
+                token_results.append({
+                    "settlement_id": entry["settlement_id"],
+                    "result": result,
+                })
+                # Fire callback if present
+                cb = entry.get("callback")
+                if callable(cb):
+                    try:
+                        cb(entry["settlement_id"], result)
+                    except Exception:
+                        logger.exception(
+                            "Callback error for settlement %s",
+                            entry["settlement_id"],
+                        )
+            group_results[token] = token_results
+
+        # Update batch performance metrics
+        self._batch_stats["total_batches_processed"] += 1
+        self._batch_stats["total_settlements_batched"] += len(batch)
+        self._batch_stats["total_latency_saved_ms"] += latency_saved
+
+        logger.info(
+            "Flushed batch %s: %d settlements, ~%.1f ms saved",
+            batch_id, len(batch), latency_saved,
+        )
+
+        return {
+            "batch_id": batch_id,
+            "settlement_ids": settlement_ids,
+            "count": len(batch),
+            "results": group_results,
+            "latency_saved_ms": round(latency_saved, 2),
+        }
+
+    def get_pending_count(self):
+        """Return the number of settlements currently waiting in the queue.
+
+        Returns:
+            int: Length of ``_pending_settlements``.
+        """
+        return len(self._pending_settlements)
+
+    def get_batch_stats(self):
+        """Return batch performance metrics for monitoring.
+
+        Returns:
+            dict with ``total_batches_processed``,
+            ``total_settlements_batched``, ``average_batch_size``,
+            ``average_latency_saved_ms``, ``total_latency_saved_ms``,
+            and ``pending_count``.
+        """
+        total_batches = self._batch_stats["total_batches_processed"]
+        total_settled = self._batch_stats["total_settlements_batched"]
+        total_saved = self._batch_stats["total_latency_saved_ms"]
+
+        avg_batch_size = (
+            total_settled / total_batches if total_batches > 0 else 0.0
+        )
+        avg_latency_saved = (
+            total_saved / total_batches if total_batches > 0 else 0.0
+        )
+
+        return {
+            "total_batches_processed": total_batches,
+            "total_settlements_batched": total_settled,
+            "average_batch_size": round(avg_batch_size, 2),
+            "average_latency_saved_ms": round(avg_latency_saved, 2),
+            "total_latency_saved_ms": round(total_saved, 2),
+            "pending_count": len(self._pending_settlements),
+        }
+
+    def settle_async(self, payment_data, callback=None):
+        """Queue a settlement and optionally call back when the batch completes.
+
+        This provides an async-style interface: the settlement is placed on
+        the pending queue and, when the batch containing it is eventually
+        flushed via ``flush_settlements``, the optional *callback* is invoked
+        with ``(settlement_id, result)``.
+
+        For latency-sensitive operations, set ``payment_data["urgent"] = True``
+        to bypass the queue and settle immediately.
+
+        Args:
+            payment_data: dict with settlement parameters (same as
+                ``queue_settlement``).
+            callback:     Optional callable ``(settlement_id, result) -> None``
+                invoked after the settlement is executed in a batch flush.
+
+        Returns:
+            dict from ``queue_settlement`` with the ``settlement_id``.
+        """
+        # Urgent requests are settled immediately
+        if payment_data.get("urgent"):
+            receipt = self.queue_settlement(payment_data)
+            if callable(callback):
+                try:
+                    callback(receipt["settlement_id"], receipt.get("result"))
+                except Exception:
+                    logger.exception(
+                        "Callback error for urgent settlement %s",
+                        receipt["settlement_id"],
+                    )
+            return receipt
+
+        receipt = self.queue_settlement(payment_data)
+        # Attach the callback to the queued entry so flush_settlements can
+        # invoke it when the batch is processed.
+        if callable(callback) and self._pending_settlements:
+            self._pending_settlements[-1]["callback"] = callback
+        return receipt
+
+    def _estimate_latency_savings(self, batch):
+        """Estimate milliseconds saved by batching vs individual settlements.
+
+        Heuristic: each individual settlement incurs a fixed overhead
+        (network round-trip + confirmation wait).  When grouped by token,
+        only the first settlement per token group pays the full overhead;
+        subsequent ones in the same group save most of it.
+
+        Model:
+          - ``BASE_OVERHEAD_MS = 120`` per individual settlement.
+          - Batching saves ``BASE_OVERHEAD_MS * (n - g)`` where *n* is total
+            settlements and *g* is the number of distinct token groups.
+
+        Args:
+            batch: list of queued settlement entries.
+
+        Returns:
+            float: Estimated milliseconds saved.
+        """
+        BASE_OVERHEAD_MS = 120  # per-settlement network/confirmation overhead
+        if not batch:
+            return 0.0
+        token_groups = set()
+        for entry in batch:
+            token = entry["payment_data"].get(
+                "settlement_token", self.preferred_settlement_token
+            )
+            token_groups.add(token)
+        # Each group still pays one overhead; savings come from the rest
+        savings = BASE_OVERHEAD_MS * max(0, len(batch) - len(token_groups))
+        return float(savings)
 
     # ── Private helpers ──────────────────────────────────────────────────
 

@@ -246,6 +246,8 @@ class GenesisEngine:
         self._ml_model = StatisticalModel()
         self._llm = LLMReasoner()
         self._llm_reasoning_cache: dict = {}  # Store latest LLM reasoning for UI
+        self._oracle_confidence_weight = 1.0  # modulates oracle data weight in decisions
+        self._oracle_confidence_details: dict = {}  # latest per-pair oracle confidence
         logger.info("GenesisEngine initialized (paused=%s, mode=%s, llm=%s)",
                      config.PAUSED, config.MODE, self._llm.provider)
 
@@ -260,9 +262,21 @@ class GenesisEngine:
             balances = self.wallet.get_all_balances()
             active = self.strategy_mgr.get_active_strategies()
             health = {s["id"]: self.strategy_mgr.monitor_strategy(s["id"]) for s in active}
+
+            # Fetch confidence-enriched prices and apply oracle confidence logic
+            self._oracle_confidence_details = {}
+            for pair in config.ONCHAINOS_MARKET_PAIRS:
+                b, q = pair["base"], pair["quote"]
+                enriched = self.oracle.get_price_with_confidence(b, q)
+                if enriched is not None:
+                    pair_key = f"{b}/{q}"
+                    self._oracle_confidence_details[pair_key] = enriched
+                    self._apply_oracle_confidence_adjustments(pair_key, enriched)
+
             self._world_state = {
                 "timestamp": int(time.time()),
                 "prices": {f"{k[0]}/{k[1]}": v for k, v in prices.items()},
+                "oracle_confidence": self._oracle_confidence_details,
                 "balances": balances, "active_strategies": active,
                 "strategy_health": health,
                 "strategy_summary": self.strategy_mgr.get_strategy_summary(),
@@ -272,11 +286,59 @@ class GenesisEngine:
                 if isinstance(price_data, (int, float)):
                     self._ml_model.update_price(float(price_data), time.time())
             self._last_perception = time.time()
-            logger.info("Perception: %d prices, %d strategies", len(prices), len(active))
+            logger.info("Perception: %d prices, %d strategies, oracle_weight=%.3f",
+                        len(prices), len(active), self._oracle_confidence_weight)
         except Exception as exc:
             logger.error("Perception layer failed: %s", exc)
             self._world_state["error"] = str(exc)
         return self._world_state
+
+    def _apply_oracle_confidence_adjustments(self, pair_key: str, enriched: dict) -> None:
+        """Apply oracle confidence-based adjustments to engine parameters.
+
+        When the oracle spread exceeds 2%, the statistical model's confidence
+        TTL is reduced by 50% so that stale high-uncertainty data expires
+        faster.  When fewer than 2 sources agree, a warning is logged and
+        ``_oracle_confidence_weight`` is penalised.
+
+        Args:
+            pair_key: human-readable pair identifier, e.g. ``"ETH/USDT"``.
+            enriched: confidence-enriched dict from
+                ``MarketOracle.get_price_with_confidence``.
+        """
+        spread = enriched.get("spread", 0.0)
+        sources_agreed = enriched.get("sources_agreed", 0)
+        oracle_conf = enriched.get("confidence", 1.0)
+
+        # High spread -> reduce confidence TTL by 50%
+        if spread > 2.0:
+            original_ttl = self._ml_model._confidence_ttl_seconds
+            reduced_ttl = original_ttl * 0.5
+            self._ml_model._confidence_ttl_seconds = reduced_ttl
+            self._ml_model.invalidate_confidence_cache()
+            logger.warning(
+                "Oracle spread %.2f%% > 2%% for %s — confidence TTL reduced "
+                "from %.0fs to %.0fs",
+                spread, pair_key, original_ttl, reduced_ttl,
+            )
+
+        # Few sources agreeing -> log warning and apply confidence penalty
+        if sources_agreed < 2:
+            logger.warning(
+                "Only %d source(s) agreed for %s (spread=%.2f%%) — "
+                "applying confidence penalty to oracle weight",
+                sources_agreed, pair_key, spread,
+            )
+
+        # Modulate _oracle_confidence_weight based on oracle's own confidence
+        # Blend toward oracle confidence with a smoothing factor
+        smoothing = 0.3
+        self._oracle_confidence_weight = (
+            (1.0 - smoothing) * self._oracle_confidence_weight
+            + smoothing * oracle_conf
+        )
+        # Floor at 0.1 to never fully ignore oracle data
+        self._oracle_confidence_weight = max(0.1, min(1.0, self._oracle_confidence_weight))
 
     # ═══════════════════════════════════════════════════════════════════
     # LAYER 2 — ANALYSIS: regime detection, mismatch & anomaly finding
@@ -411,7 +473,7 @@ class GenesisEngine:
                         regime_clarity=abs(0.5 - self._analysis_cache.get("bayesian_regime", {}).get("confidence", 0.5)) * 2,
                         trend_strength=abs(self._analysis_cache.get("ml_forecast", {}).get("predicted_change_pct", 0)) / 5
                     )
-                    final_conf = min((best_c * 0.4 + ml_conf * 0.6) * (0.7 + bias * 0.3), 0.95)
+                    final_conf = min((best_c * 0.4 + ml_conf * 0.6) * (0.7 + bias * 0.3) * self._oracle_confidence_weight, 0.95)
                     actions.append({
                         "type": "create_strategy",
                         "confidence": final_conf,
@@ -726,4 +788,6 @@ class GenesisEngine:
             "bayesian_regime": self._ml_model._bayesian_prior,
             "llm_provider": self._llm.provider,
             "llm_reasoning": self._llm_reasoning_cache,
+            "oracle_confidence_weight": round(self._oracle_confidence_weight, 4),
+            "oracle_confidence_details": self._oracle_confidence_details,
         }

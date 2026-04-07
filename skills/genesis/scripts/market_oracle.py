@@ -61,6 +61,7 @@ class MarketOracle:
         self.pairs = config.ONCHAINOS_MARKET_PAIRS
         self.chain_id = getattr(config, "CHAIN_ID", "1")
         self._price_cache = {}  # (base, quote) -> (timestamp, price)
+        self._last_source_prices = {}  # (base, quote) -> raw source data from last fetch
         self._price_history = {}  # (base, quote) -> [(timestamp, price), ...]
         self._api = OnchainOSAPI()
         self._source_reliability = {
@@ -132,8 +133,114 @@ class MarketOracle:
         )
 
         self._price_cache[key] = (now, price)
+        self._last_source_prices[key] = {
+            "valid_prices": valid_prices,
+            "source_prices": source_prices,
+            "succeeded": succeeded,
+            "failed": failed,
+            "median": price,
+        }
         self.update_price_history(base, quote, price)
         return price
+
+    def get_price_with_confidence(self, base: str, quote: str) -> dict | None:
+        """Get the current price with full confidence metadata for a base/quote pair.
+
+        Returns a dict with keys:
+            - price (float): median consensus price
+            - confidence (float): 0.0-1.0 score; 1.0 when all sources agree within 0.5%
+            - spread (float): percentage spread (max-min)/median
+            - sources_agreed (int): number of sources within 1% of the median
+            - total_sources (int): total number of sources that returned valid prices
+            - source_details (list): per-source dicts with name, price, and deviation
+
+        Calls ``fetch_price`` internally to ensure caching and history are updated,
+        then computes agreement metrics from the last fetch's raw source data.
+
+        Returns ``None`` if no price could be fetched from any source.
+        """
+        price = self.fetch_price(base, quote)
+        if price is None:
+            return None
+
+        key = (base, quote)
+        raw = self._last_source_prices.get(key)
+        if raw is None:
+            # Fallback: only cached price available, no per-source detail
+            return {
+                "price": price,
+                "confidence": 0.5,
+                "spread": 0.0,
+                "sources_agreed": 1,
+                "total_sources": 1,
+                "source_details": [],
+            }
+
+        return self._compute_confidence_result(price, raw)
+
+    def _compute_confidence_result(self, median_price: float, raw: dict) -> dict:
+        """Build the confidence-enriched result dict from raw source data.
+
+        Args:
+            median_price: the consensus (median) price already computed.
+            raw: internal dict produced during ``fetch_price`` containing
+                 ``valid_prices``, ``source_prices``, ``succeeded``, and ``failed``.
+
+        Returns:
+            A dict conforming to the ``get_price_with_confidence`` contract.
+        """
+        valid_prices: list[float] = raw["valid_prices"]
+        source_prices: dict = raw["source_prices"]
+        succeeded: list[str] = raw["succeeded"]
+        total_sources = len(valid_prices)
+
+        # Spread as percentage: (max - min) / median * 100
+        if total_sources >= 2:
+            spread = (max(valid_prices) - min(valid_prices)) / median_price * 100
+        else:
+            spread = 0.0
+
+        # Sources agreed: within 1% of the median
+        sources_agreed = 0
+        source_details: list[dict] = []
+        for src_name in succeeded:
+            px = source_prices.get(src_name)
+            if px is not None and px > 0:
+                deviation_pct = abs(px - median_price) / median_price * 100
+                source_details.append({
+                    "name": src_name,
+                    "price": px,
+                    "deviation_pct": round(deviation_pct, 4),
+                })
+                if deviation_pct <= 1.0:
+                    sources_agreed += 1
+
+        # Confidence calculation:
+        # Start at 1.0 when all sources agree within 0.5% spread,
+        # decrease as spread widens. Penalise for fewer agreeing sources.
+        if spread <= 0.5:
+            spread_factor = 1.0
+        elif spread <= 5.0:
+            # Linear decay from 1.0 at 0.5% to 0.1 at 5.0%
+            spread_factor = max(0.1, 1.0 - (spread - 0.5) / (5.0 - 0.5) * 0.9)
+        else:
+            spread_factor = 0.1
+
+        agreement_factor = sources_agreed / total_sources if total_sources > 0 else 0.0
+        confidence = round(
+            max(0.0, min(1.0, spread_factor * 0.6 + agreement_factor * 0.4)), 4
+        )
+
+        result = {
+            "price": median_price,
+            "confidence": confidence,
+            "spread": round(spread, 4),
+            "sources_agreed": sources_agreed,
+            "total_sources": total_sources,
+            "source_details": source_details,
+        }
+        logger.debug("Price with confidence %s: %s", median_price, result)
+        return result
 
     def _fetch_from_onchainos(self, base: str, quote: str) -> float | None:
         """Fetch price from OnchainOS REST API with CLI fallback."""

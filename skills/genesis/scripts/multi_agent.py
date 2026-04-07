@@ -15,8 +15,9 @@ sub-wallets for their operations.
 
 import logging
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -156,6 +157,42 @@ AGENT_MAX_HOURLY_VALUE: dict[str, float] = {
     "RebalanceAgent": 300_000.0,
 }
 
+# ── Upgrade #9: Economic Constraint Governance (Staking) ─────────────────
+
+# Initial stake balance per agent type
+AGENT_INITIAL_STAKE: dict[str, float] = {
+    "SentinelAgent": 1000.0,
+    "StrategyAgent": 2000.0,
+    "IncomeAgent": 1500.0,
+    "RebalanceAgent": 1500.0,
+}
+
+# Penalty factors by severity level
+PENALTY_FACTORS: dict[str, float] = {
+    "minor": 0.2,
+    "moderate": 0.5,
+    "major": 1.0,
+}
+
+# Stake cost multipliers by risk level
+_RISK_STAKE_COST: dict[str, float] = {
+    "low": 0.01,
+    "medium": 0.05,
+    "high": 0.10,
+    "critical": 0.20,
+}
+
+# Minimum stake threshold factor (20% of initial)
+_STAKE_DEGRADATION_FACTOR = 0.20
+
+# ── Upgrade #10: Degradation Audit Chain ─────────────────────────────────
+
+# Max attestations to keep in the degradation log
+_DEGRADATION_LOG_MAXLEN = 200
+
+# Number of recent operations to store in partial reasoning trace
+_REASONING_TRACE_MAXLEN = 10
+
 logger = logging.getLogger(__name__)
 
 
@@ -207,6 +244,15 @@ class MultiAgentOrchestrator:
         self._agent_health: dict[str, AgentHealth] = {}
         # Upgrade #8 – rate limiter: {agent_name: [(timestamp, operation_type, value), ...]}
         self._rate_limiter: dict[str, list[tuple[float, str, float]]] = defaultdict(list)
+        # Upgrade #9 – staking balances, reward/penalty accumulators
+        self._agent_stakes: dict[str, float] = {}
+        self._staking_total_rewards: dict[str, float] = defaultdict(float)
+        self._staking_total_penalties: dict[str, float] = defaultdict(float)
+        # Upgrade #10 – degradation audit chain & per-agent operation trace
+        self._degradation_log: deque = deque(maxlen=_DEGRADATION_LOG_MAXLEN)
+        self._agent_operation_trace: dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=_REASONING_TRACE_MAXLEN)
+        )
         self._init_agents()
         logger.info("MultiAgentOrchestrator initialized with %d agents", len(self.agents))
 
@@ -230,8 +276,9 @@ class MultiAgentOrchestrator:
                 wallet_index=index,
             )
             self._agent_health[name] = AgentHealth.HEALTHY
-            logger.debug("Registered agent: %s (wallet=%s, idx=%d) - %s",
-                         name, role, index, description)
+            self._agent_stakes[name] = AGENT_INITIAL_STAKE.get(name, 1000.0)
+            logger.debug("Registered agent: %s (wallet=%s, idx=%d, stake=%.1f) - %s",
+                         name, role, index, self._agent_stakes[name], description)
 
     def get_agent(self, name: str) -> Optional[AgentState]:
         """Get agent state by name."""
@@ -324,6 +371,13 @@ class MultiAgentOrchestrator:
                 (time.time(), operation_type, operation_value)
             )
 
+            # Upgrade #10 – record operation in trace
+            self._agent_operation_trace[agent_name].append({
+                "action": action,
+                "timestamp": int(time.time()),
+                "status": "success",
+            })
+
             # ── Upgrade #7: auto-recovery on success ────────────────────
             agent.consecutive_failures = 0
             agent.consecutive_successes += 1
@@ -342,17 +396,38 @@ class MultiAgentOrchestrator:
             agent.status = "error"
             logger.error("Agent %s failed: %s", agent_name, exc)
 
+            # Upgrade #10 – record failed operation in trace
+            self._agent_operation_trace[agent_name].append({
+                "action": action,
+                "timestamp": int(time.time()),
+                "status": "error",
+                "error": str(exc),
+            })
+
             # ── Upgrade #7: track consecutive failures & degrade ────────
             agent.consecutive_successes = 0
             agent.consecutive_failures += 1
+            old_health = self._agent_health.get(agent_name, AgentHealth.HEALTHY)
             if agent.consecutive_failures >= FAILED_THRESHOLD:
                 self._agent_health[agent_name] = AgentHealth.FAILED
                 logger.error("Agent %s marked FAILED after %d consecutive failures",
                              agent_name, agent.consecutive_failures)
+                # Upgrade #10 – attestation on automatic FAILED transition
+                if old_health != AgentHealth.FAILED:
+                    self._generate_degradation_attestation(
+                        agent_name, old_health, AgentHealth.FAILED,
+                        f"{agent.consecutive_failures} consecutive failures"
+                    )
             elif agent.consecutive_failures >= DEGRADED_THRESHOLD:
                 self._agent_health[agent_name] = AgentHealth.DEGRADED
                 logger.warning("Agent %s marked DEGRADED after %d consecutive failures",
                                agent_name, agent.consecutive_failures)
+                # Upgrade #10 – attestation on automatic DEGRADED transition
+                if old_health != AgentHealth.DEGRADED:
+                    self._generate_degradation_attestation(
+                        agent_name, old_health, AgentHealth.DEGRADED,
+                        f"{agent.consecutive_failures} consecutive failures"
+                    )
 
             return {"error": str(exc), "agent": agent_name,
                     "health": self._agent_health.get(agent_name, AgentHealth.HEALTHY).value}
@@ -1037,6 +1112,18 @@ class MultiAgentOrchestrator:
             results["income_collection"] = income_result
 
         results["skipped_agents"] = skipped_agents
+        # Upgrade #10 – include attestation info for skipped agents
+        skipped_attestations = []
+        for skipped_name in skipped_agents:
+            agent_attestations = [
+                a for a in self._degradation_log if a["agent_name"] == skipped_name
+            ]
+            if agent_attestations:
+                skipped_attestations.append({
+                    "agent_name": skipped_name,
+                    "latest_attestation": agent_attestations[-1],
+                })
+        results["skipped_attestations"] = skipped_attestations
         results["cycle_duration_sec"] = round(time.time() - cycle_start, 3)
         logger.info("Coordination cycle complete in %.3fs (skipped: %s)",
                      results["cycle_duration_sec"], skipped_agents or "none")
@@ -1076,12 +1163,21 @@ class MultiAgentOrchestrator:
         return report
 
     def set_agent_health(self, agent_name: str, health: AgentHealth) -> None:
-        """Manually override an agent's health (e.g., to DISABLED)."""
+        """Manually override an agent's health (e.g., to DISABLED).
+
+        Upgrade #10: auto-generates a degradation attestation when the new
+        health is DEGRADED or FAILED.
+        """
         if agent_name in self._agent_health:
             old = self._agent_health[agent_name]
             self._agent_health[agent_name] = health
             logger.info("Agent %s health manually set: %s -> %s",
                         agent_name, old.value, health.value)
+            # Upgrade #10 – attestation on degradation
+            if health in (AgentHealth.DEGRADED, AgentHealth.FAILED):
+                self._generate_degradation_attestation(
+                    agent_name, old, health, "manual health override"
+                )
 
     # ── Upgrade #8: Rate-limiting helpers ────────────────────────────────
 
@@ -1155,3 +1251,239 @@ class MultiAgentOrchestrator:
             "mode": config.MODE,
             "agents": self.get_all_status(),
         }
+
+    # ── Upgrade #9: Economic Constraint Governance (Staking) ────────────
+
+    def _stake_cost(self, agent_name: str, risk_level: str) -> float:
+        """Calculate the stake cost for an operation based on risk level.
+
+        The cost is a fraction of the agent's initial stake determined by
+        the risk-level multiplier.
+
+        Args:
+            agent_name: Name of the agent (e.g. 'StrategyAgent').
+            risk_level: One of 'low', 'medium', 'high', 'critical'.
+
+        Returns:
+            The computed stake cost (float).
+        """
+        initial = AGENT_INITIAL_STAKE.get(agent_name, 1000.0)
+        multiplier = _RISK_STAKE_COST.get(risk_level, 0.05)
+        return initial * multiplier
+
+    def check_stake_sufficiency(self, agent_name: str, risk_level: str) -> dict:
+        """Verify that an agent has sufficient stake for a high-risk operation.
+
+        Args:
+            agent_name: Name of the agent.
+            risk_level: One of 'low', 'medium', 'high', 'critical'.
+
+        Returns:
+            Dict with 'sufficient' bool, 'current_stake', 'required_cost',
+            and 'shortfall' (0 if sufficient).
+        """
+        current = self._agent_stakes.get(agent_name, 0.0)
+        cost = self._stake_cost(agent_name, risk_level)
+        sufficient = current >= cost
+        return {
+            "sufficient": sufficient,
+            "current_stake": round(current, 4),
+            "required_cost": round(cost, 4),
+            "shortfall": round(max(cost - current, 0), 4),
+        }
+
+    def record_stake_outcome(
+        self, agent_name: str, decision_id: str, success: bool,
+        magnitude: float, severity: str = "moderate"
+    ) -> dict:
+        """Record the outcome of a staked operation.
+
+        On success the agent receives its stake cost back plus a reward
+        equal to 10% of the cost.  On failure the cost is multiplied by
+        the penalty factor for the given severity and deducted.
+
+        If the agent's remaining stake drops below 20% of its initial
+        value the agent is automatically degraded.
+
+        Args:
+            agent_name: Name of the agent.
+            decision_id: Unique identifier for the decision/operation.
+            success: Whether the operation succeeded.
+            magnitude: Nominal value/size of the operation (informational).
+            severity: One of 'minor', 'moderate', 'major' (used on failure).
+
+        Returns:
+            Dict with outcome details including new stake balance.
+        """
+        cost = self._stake_cost(agent_name, "medium")  # base cost
+        current = self._agent_stakes.get(agent_name, 0.0)
+
+        if success:
+            reward = cost * 0.1
+            self._agent_stakes[agent_name] = current + reward
+            self._staking_total_rewards[agent_name] += reward
+            logger.info("Agent %s staking reward +%.4f for decision %s",
+                        agent_name, reward, decision_id)
+            outcome = {
+                "agent_name": agent_name,
+                "decision_id": decision_id,
+                "success": True,
+                "reward": round(reward, 4),
+                "penalty": 0.0,
+                "new_stake": round(self._agent_stakes[agent_name], 4),
+            }
+        else:
+            penalty_factor = PENALTY_FACTORS.get(severity, 0.5)
+            penalty = cost * penalty_factor
+            self._agent_stakes[agent_name] = max(current - penalty, 0.0)
+            self._staking_total_penalties[agent_name] += penalty
+            logger.warning("Agent %s staking penalty -%.4f (severity=%s) for decision %s",
+                           agent_name, penalty, severity, decision_id)
+            outcome = {
+                "agent_name": agent_name,
+                "decision_id": decision_id,
+                "success": False,
+                "reward": 0.0,
+                "penalty": round(penalty, 4),
+                "severity": severity,
+                "new_stake": round(self._agent_stakes[agent_name], 4),
+            }
+
+        # Auto-degrade if stake drops below 20% of initial
+        initial = AGENT_INITIAL_STAKE.get(agent_name, 1000.0)
+        threshold = initial * _STAKE_DEGRADATION_FACTOR
+        if self._agent_stakes[agent_name] < threshold:
+            old_health = self._agent_health.get(agent_name, AgentHealth.HEALTHY)
+            if old_health not in (AgentHealth.DEGRADED, AgentHealth.FAILED,
+                                  AgentHealth.DISABLED):
+                self._agent_health[agent_name] = AgentHealth.DEGRADED
+                logger.warning("Agent %s auto-degraded: stake %.4f below threshold %.4f",
+                               agent_name, self._agent_stakes[agent_name], threshold)
+                self._generate_degradation_attestation(
+                    agent_name, old_health, AgentHealth.DEGRADED,
+                    f"stake {self._agent_stakes[agent_name]:.4f} below threshold {threshold:.4f}"
+                )
+            outcome["auto_degraded"] = True
+
+        return outcome
+
+    def get_staking_report(self) -> dict:
+        """Return per-agent stake levels, total rewards, and total penalties.
+
+        Returns:
+            Dict keyed by agent name with stake details, plus global totals.
+        """
+        report: dict[str, dict] = {}
+        for name in self.agents:
+            initial = AGENT_INITIAL_STAKE.get(name, 1000.0)
+            current = self._agent_stakes.get(name, 0.0)
+            report[name] = {
+                "initial_stake": initial,
+                "current_stake": round(current, 4),
+                "stake_pct": round((current / initial) * 100, 2) if initial > 0 else 0.0,
+                "total_rewards": round(self._staking_total_rewards.get(name, 0.0), 4),
+                "total_penalties": round(self._staking_total_penalties.get(name, 0.0), 4),
+                "degraded_threshold": round(initial * _STAKE_DEGRADATION_FACTOR, 4),
+            }
+        total_rewards = sum(self._staking_total_rewards.values())
+        total_penalties = sum(self._staking_total_penalties.values())
+        return {
+            "agents": report,
+            "global_total_rewards": round(total_rewards, 4),
+            "global_total_penalties": round(total_penalties, 4),
+        }
+
+    def replenish_stake(self, agent_name: str, amount: float) -> dict:
+        """Top-up an agent's stake balance.
+
+        Can be called manually or on a schedule to restore operational
+        capacity after penalty deductions.
+
+        Args:
+            agent_name: Name of the agent.
+            amount: Positive amount to add to the agent's stake.
+
+        Returns:
+            Dict with previous and new stake balances.
+        """
+        if agent_name not in self._agent_stakes:
+            return {"error": f"Unknown agent: {agent_name}"}
+        if amount <= 0:
+            return {"error": "Amount must be positive"}
+        previous = self._agent_stakes[agent_name]
+        self._agent_stakes[agent_name] = previous + amount
+        logger.info("Agent %s stake replenished: %.4f -> %.4f (+%.4f)",
+                    agent_name, previous, self._agent_stakes[agent_name], amount)
+        return {
+            "agent_name": agent_name,
+            "previous_stake": round(previous, 4),
+            "replenished": round(amount, 4),
+            "new_stake": round(self._agent_stakes[agent_name], 4),
+        }
+
+    # ── Upgrade #10: Degradation Audit Chain ─────────────────────────────
+
+    def _generate_degradation_attestation(
+        self, agent_name: str, previous_health: AgentHealth,
+        new_health: AgentHealth, trigger_reason: str
+    ) -> dict:
+        """Create and store an attestation dict when an agent degrades.
+
+        The attestation captures capability status, a partial reasoning
+        trace (recent operations), and is appended to ``_degradation_log``.
+
+        Args:
+            agent_name: Name of the agent transitioning.
+            previous_health: Health state before the transition.
+            new_health: Health state after the transition.
+            trigger_reason: Human-readable reason for the transition.
+
+        Returns:
+            The attestation dict that was stored.
+        """
+        all_caps = list(AGENT_CAPABILITIES.get(agent_name, []))
+        if new_health == AgentHealth.FAILED:
+            available = []
+            unavailable = all_caps
+        elif new_health == AgentHealth.DEGRADED:
+            # In DEGRADED mode, health_check-type actions remain available
+            available = [c for c in all_caps if "check" in c or "report" in c or "health" in c]
+            unavailable = [c for c in all_caps if c not in available]
+            # Ensure at least some are available if the heuristic yields nothing
+            if not available and all_caps:
+                available = all_caps[:1]
+                unavailable = all_caps[1:]
+        else:
+            available = all_caps
+            unavailable = []
+
+        trace = list(self._agent_operation_trace.get(agent_name, []))
+
+        attestation = {
+            "agent_name": agent_name,
+            "previous_health": previous_health.value,
+            "new_health": new_health.value,
+            "trigger_reason": trigger_reason,
+            "available_capabilities": available,
+            "unavailable_capabilities": unavailable,
+            "partial_reasoning_trace": trace,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._degradation_log.append(attestation)
+        logger.info("Degradation attestation recorded for %s: %s -> %s (%s)",
+                    agent_name, previous_health.value, new_health.value, trigger_reason)
+        return attestation
+
+    def get_degradation_attestations(self, agent_name: str | None = None) -> list[dict]:
+        """Return degradation attestations, optionally filtered by agent name.
+
+        Args:
+            agent_name: If provided, only attestations for this agent are
+                returned.  If ``None``, all attestations are returned.
+
+        Returns:
+            List of attestation dicts ordered from oldest to newest.
+        """
+        if agent_name is None:
+            return list(self._degradation_log)
+        return [a for a in self._degradation_log if a["agent_name"] == agent_name]
